@@ -22,6 +22,3 @@ node_modules/
 # Sistema operativo
 .DS_Store
 Thumbs.db
-
-# Documentación (temporal — se versiona al cerrar el sprint)
-docs/
