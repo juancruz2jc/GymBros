@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gymbros
+      POSTGRES_PASSWORD: gymbros
+      POSTGRES_DB: gymbros
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gymbros"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./gymbros-api
+    env_file: ./gymbros-api/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./gymbros-api:/code
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
