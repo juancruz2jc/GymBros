@@ -1,0 +1,59 @@
+"""Primitivas de seguridad: hash de contraseñas y emisión de tokens.
+
+RN-22: la contraseña en claro no se registra en logs ni se almacena. Solo entra
+a `hashear_password` / `verificar_password` y no sale de este módulo.
+"""
+
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
+
+from app.core.config import settings
+
+# Instancia única. argon2-cffi usa Argon2id por defecto (RN-22) y sus parámetros
+# de coste por defecto son los que recomienda OWASP; no hace falta configurarlos.
+_hasher = PasswordHasher()
+
+
+def hashear_password(password: str) -> str:
+    """Devuelve el hash Argon2id de la contraseña (incluye sal y parámetros)."""
+    return _hasher.hash(password)
+
+
+def verificar_password(hash_almacenado: str, password: str) -> bool:
+    """Indica si la contraseña coincide con el hash. No lanza."""
+    try:
+        return _hasher.verify(hash_almacenado, password)
+    except (VerificationError, InvalidHashError):
+        return False
+
+
+def crear_access_token(usuario_id: UUID | str) -> str:
+    """JWT de acceso firmado con `JWT_SECRET` (HS256 por defecto).
+
+    `sub` va como string: lo exigen el RFC 7519 y PyJWT >= 2.10 al decodificar.
+    """
+    ahora = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(usuario_id),
+        "iat": ahora,
+        "exp": ahora + timedelta(minutes=settings.ACCESS_TOKEN_MINUTOS),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def generar_refresh_token() -> tuple[str, str]:
+    """Genera un refresh token opaco. Devuelve `(valor_en_claro, hash_sha256_hex)`.
+
+    El valor en claro se entrega al cliente; en la base solo se guarda el hash.
+    Se usa SHA-256 y no Argon2: son 256 bits aleatorios, no hay nada que
+    adivinar por fuerza bruta y la lentitud de Argon2 solo añadiría latencia.
+    """
+    valor = secrets.token_urlsafe(32)
+    hash_hex = hashlib.sha256(valor.encode()).hexdigest()
+    return valor, hash_hex

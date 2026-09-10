@@ -5,7 +5,12 @@ negocio, el middleware, los exception handlers y los eventos de arranque se
 montan aquí a medida que se implementan.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from app.api.v1.router import api_router
 
 VERSION = "0.1.0"
 
@@ -13,6 +18,26 @@ app = FastAPI(
     title="GymBros API",
     version=VERSION,
 )
+
+app.include_router(api_router)
+
+
+@app.exception_handler(RequestValidationError)
+def _errores_de_validacion(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """422 sin el eco del valor inválido.
+
+    RN-22: la respuesta por defecto de FastAPI incluye `input` con el dato que
+    falló; en el registro eso filtraría la contraseña al cuerpo de la respuesta
+    y a los logs de acceso. Se elimina antes de serializar.
+    """
+    errores = [
+        {clave: valor for clave, valor in err.items() if clave != "input"}
+        for err in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": jsonable_encoder(errores)},
+    )
 
 
 # Los endpoints se declaran con `def`, no con `async def`: el acceso a datos es
