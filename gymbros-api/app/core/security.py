@@ -33,6 +33,20 @@ def verificar_password(hash_almacenado: str, password: str) -> bool:
         return False
 
 
+def necesita_rehash(hash_almacenado: str) -> bool:
+    """Indica si el hash se generó con parámetros más débiles que los actuales.
+
+    Se llama tras un `verificar_password` correcto: si devuelve `True`, hay que
+    volver a hashear la contraseña en claro con `hashear_password` y guardar el
+    nuevo hash. Así los usuarios antiguos migran solos cuando se suben los
+    parámetros de Argon2. No lanza: un hash ilegible devuelve `False`.
+    """
+    try:
+        return _hasher.check_needs_rehash(hash_almacenado)
+    except InvalidHashError:
+        return False
+
+
 def crear_access_token(usuario_id: UUID | str) -> str:
     """JWT de acceso firmado con `JWT_SECRET` (HS256 por defecto).
 
