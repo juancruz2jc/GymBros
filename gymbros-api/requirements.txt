@@ -1,0 +1,17 @@
+# API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Configuración
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Base de datos y migraciones
+SQLAlchemy==2.0.52
+alembic==1.19.2
+psycopg2-binary==2.9.12
+
+# Seguridad
+argon2-cffi==23.1.0
+pyjwt==2.10.1
+email-validator==2.2.0
