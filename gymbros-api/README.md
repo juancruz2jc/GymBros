@@ -108,6 +108,34 @@ como volumen y uvicorn corre con `--reload`.
 
 ---
 
+## Datos de ejemplo (seeds)
+
+Scripts de una sola vez que se corren **a mano** tras aplicar las migraciones.
+No son parte del arranque de la API.
+
+### Catálogo de ejercicios (`scripts/seed_ejercicios.py`)
+
+Carga un set de maquetado (43 ejercicios: 41 activos + 2 inactivos, repartidos
+entre 10 grupos musculares, 6 equipos y 5 categorías) para poder probar los filtros de
+`GET /api/v1/ejercicios`. Incluye a propósito dos ejercicios con
+`activo = false` para verificar que el catálogo público los oculta (RN-39).
+Es **idempotente**: identifica cada fila por `nombre_en` y solo inserta lo que
+falta, así que se puede repetir sin duplicar.
+
+```powershell
+# Con Docker, desde la raíz del monorepo
+docker compose exec api python -m scripts.seed_ejercicios
+
+# En local (venv), desde gymbros-api/
+python -m scripts.seed_ejercicios
+```
+
+No es el catálogo definitivo: RF-12 prevé migrar a una fuente con licencia
+clara (wger) más adelante; las `gif_url` de este seed son marcadores de
+posición.
+
+---
+
 ## Estructura de carpetas
 
 ```
