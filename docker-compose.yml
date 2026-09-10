@@ -19,7 +19,7 @@ services:
     build: ./gymbros-api
     env_file: ./gymbros-api/.env
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./gymbros-api:/code
     depends_on:
