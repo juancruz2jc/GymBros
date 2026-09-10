@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Node (gymbros-app)
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Documentación (temporal — se versiona al cerrar el sprint)
+docs/
