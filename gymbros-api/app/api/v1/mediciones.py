@@ -8,8 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, get_db
 from app.models.usuario import Usuario
-from app.schemas.medicion import MedicionResponse
-from app.services.medicion_service import listar_mediciones, obtener_medicion
+from app.schemas.medicion import MedicionActualizar, MedicionResponse
+from app.services.medicion_service import (
+    actualizar_medicion,
+    eliminar_medicion,
+    listar_mediciones,
+    obtener_medicion,
+)
 
 router = APIRouter(prefix="/mediciones", tags=["mediciones"])
 
@@ -75,3 +80,56 @@ def detalle_medicion(
             detail="Medición no encontrada.",
         )
     return medicion
+
+
+@router.put(
+    "/{medicion_id}",
+    response_model=MedicionResponse,
+    summary="Editar una medición del usuario autenticado",
+    responses={404: {"description": "No existe o no es del usuario autenticado"}},
+)
+def editar_medicion(
+    medicion_id: UUID,
+    datos: MedicionActualizar,
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MedicionResponse:
+    """Edita los campos indicados de una medición **del usuario del token**.
+
+    Actualización parcial: los campos omitidos no cambian. 404 si el id no existe
+    o es de otra persona (RN-08), igual que el GET por id. 422 si algún valor
+    sale de los rangos de RN-03 a RN-06. Un `usuario_id` en el cuerpo se ignora,
+    nunca reasigna la medición (RN-37).
+    """
+    medicion = actualizar_medicion(
+        db, usuario=usuario, medicion_id=medicion_id, datos=datos
+    )
+    if medicion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medición no encontrada.",
+        )
+    return medicion
+
+
+@router.delete(
+    "/{medicion_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar una medición del usuario autenticado",
+    responses={404: {"description": "No existe o no es del usuario autenticado"}},
+)
+def borrar_medicion(
+    medicion_id: UUID,
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Borra definitivamente una medición **del usuario del token** (RN-36).
+
+    404 si el id no existe o es de otra persona (RN-08). Borrar dos veces la
+    misma medición: 204 la primera, 404 la segunda.
+    """
+    if not eliminar_medicion(db, usuario=usuario, medicion_id=medicion_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medición no encontrada.",
+        )
