@@ -44,6 +44,22 @@ class RegistroRequest(BaseModel):
         return valor
 
 
+class LoginRequest(BaseModel):
+    """Cuerpo de `POST /auth/login`."""
+
+    correo: EmailStr
+    # Solo se comprueba que venga algo. La fuerza (RN-21) se valida al
+    # registrarse, no al entrar: si se endurecen las reglas, los usuarios
+    # antiguos deben poder seguir iniciando sesión.
+    password: str = Field(min_length=1, max_length=128)
+
+
+class RefreshTokenRequest(BaseModel):
+    """Cuerpo de `POST /auth/logout` y `POST /auth/refresh`."""
+
+    refresh_token: str = Field(min_length=1)
+
+
 class TokenResponse(BaseModel):
     """Par de tokens que se devuelve tras un registro o login correcto (RN-23)."""
 
@@ -51,3 +67,9 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int  # segundos de vida del access_token
+
+
+class MensajeResponse(BaseModel):
+    """Respuesta genérica cuando no hay tokens que devolver (p. ej. logout)."""
+
+    mensaje: str

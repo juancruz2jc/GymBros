@@ -1,6 +1,7 @@
 # API · Autenticación
 
-Estado: **RF-01 (registro) implementado** · GYM-72
+Estado: **RF-01 (registro)** · **RF-02 (login / logout / refresh)** implementados ·
+GYM-72, GYM-73. Recuperación de contraseña: pendiente.
 Base URL local: `http://localhost:8001` · Prefijo: `/api/v1`
 
 ---
@@ -121,6 +122,79 @@ curl -X POST http://localhost:8001/api/v1/auth/registro \
 
 ---
 
+## `POST /api/v1/auth/login`
+
+Verifica credenciales y devuelve un par de tokens **nuevo** (no reutiliza el del
+registro).
+
+### Request — `LoginRequest`
+
+| Campo | Reglas |
+|---|---|
+| `correo` | Email válido. Se normaliza a minúsculas para buscar (RN-20: `Juan@x` y `juan@x` son la misma cuenta). |
+| `password` | Solo se exige que venga (`min_length=1`). **No** se valida la fuerza: si se endurecen las reglas, los usuarios antiguos deben poder entrar. |
+
+### Respuestas
+
+- **`200 OK`** → `TokenResponse` (mismo formato que el registro). Si el hash de la
+  contraseña estaba con parámetros de Argon2 más débiles, se regenera en este
+  login y el usuario migra sin enterarse (`necesita_rehash`).
+- **`401 Unauthorized`** → `{ "detail": "Correo o contraseña incorrectos." }`
+  **idéntico** tanto si el correo no existe como si la contraseña es incorrecta
+  (RN-24). Cuando el correo no existe se verifica igualmente contra un hash
+  ficticio para que la respuesta tarde lo mismo (~170 ms, dominado por Argon2) y
+  no se pueda deducir por cronometría qué correos están registrados.
+
+```bash
+curl -X POST http://localhost:8001/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"correo":"juan@gmail.com","password":"Secreta123"}'
+```
+
+---
+
+## `POST /api/v1/auth/logout`
+
+Revoca un refresh token.
+
+### Request — `RefreshTokenRequest`
+
+| Campo | |
+|---|---|
+| `refresh_token` | El valor en claro que recibió el cliente. |
+
+### Respuestas
+
+- **`200 OK`** → `{ "mensaje": "Sesión cerrada." }` **siempre**, exista el token,
+  no exista, o ya estuviera revocado (RN-26: un logout no revela si el token era
+  válido).
+
+Tras el logout, ese refresh ya no sirve para `/refresh` → 401.
+
+---
+
+## `POST /api/v1/auth/refresh`
+
+Canjea un refresh válido por un par de tokens nuevo y **revoca el anterior**
+(rotación).
+
+### Request — `RefreshTokenRequest`
+
+Igual que logout: `{ "refresh_token": "..." }`.
+
+### Respuestas
+
+- **`200 OK`** → `TokenResponse` con `access_token` y `refresh_token` nuevos. El
+  refresh entregado queda revocado en el acto.
+- **`401 Unauthorized`** → `{ "detail": "Refresh token inválido o expirado." }`
+  si el token no existe, ya estaba revocado (incluido "ya se rotó una vez"), o
+  pasó de `expira_en`. También 401 si la cuenta asociada ya no existe.
+
+**Por qué rotación:** si un token robado se usa después de que el usuario
+legítimo ya lo canjeó, el del atacante llega revocado → 401.
+
+---
+
 ## Reglas de negocio aplicadas
 
 | Regla | Exige | Dónde |
@@ -129,6 +203,9 @@ curl -X POST http://localhost:8001/api/v1/auth/registro \
 | RN-21 | Contraseña ≥ 8, al menos una letra y un número | Validador de `password` en `schemas/auth.py` (`Field(min_length=8, max_length=128)` + regex) |
 | RN-22 | Hash Argon2id, nunca en claro ni en logs | `core/security.hashear_password` (Argon2id por defecto de `argon2-cffi`) + handler de 422 en `main.py` |
 | RN-23 | El registro exitoso deja sesión iniciada | `registrar_usuario` emite y devuelve `access` + `refresh` |
+| RN-24 | Login fallido: mensaje genérico, sin revelar si el correo existe | `autenticar_usuario` — mismo `CredencialesInvalidasError` en ambos casos + verificación contra `HASH_FICTICIO` cuando no hay usuario (iguala el tiempo) |
+| RN-25 | Access corto + refresh largo | `ACCESS_TOKEN_MINUTOS=15` en el JWT, `REFRESH_TOKEN_DIAS=30` en `refresh_tokens.expira_en` |
+| RN-26 | Logout revoca el refresh token | `cerrar_sesion` marca `revocado=True`; responde 200 igual si no existe o ya estaba revocado |
 | Ley 1581 | Capturar el consentimiento de tratamiento de datos | Campo obligatorio `consentimiento_datos` + columnas `consentimiento_datos` / `consentimiento_en` (migración `444873b25785`) |
 
 ---
@@ -138,10 +215,10 @@ curl -X POST http://localhost:8001/api/v1/auth/registro \
 | Archivo | Responsabilidad |
 |---|---|
 | `app/api/dependencies.py` | `get_db`: cede una `Session` y la cierra en `finally` (la conexión vuelve al pool aunque el endpoint lance). |
-| `app/core/security.py` | `hashear_password` / `verificar_password` (Argon2id), `necesita_rehash` (`check_needs_rehash`), `crear_access_token` (JWT HS256), `generar_refresh_token` (opaco + hash SHA-256). |
-| `app/schemas/auth.py` | `RegistroRequest` (validaciones RN-21 y Ley 1581), `TokenResponse`. |
-| `app/services/auth_service.py` | `registrar_usuario`: normaliza correo, hashea, crea usuario, guarda el hash del refresh, hace `commit` y devuelve los tokens. `CorreoYaRegistradoError` → 409. |
-| `app/api/v1/auth.py` | Router `/auth`; `POST /registro` → 201, traduce `CorreoYaRegistradoError` a `HTTPException(409)`. |
+| `app/core/security.py` | `hashear_password` / `verificar_password` / `necesita_rehash` (Argon2id), `hashear_token` (SHA-256 de un opaco, para guardar y para buscar), `HASH_FICTICIO` (dummy para el timing del login), `crear_access_token` (JWT HS256), `generar_refresh_token` (opaco + hash). Sin acceso a BD. |
+| `app/schemas/auth.py` | `RegistroRequest`, `LoginRequest`, `RefreshTokenRequest` (logout + refresh), `TokenResponse`, `MensajeResponse`. |
+| `app/services/auth_service.py` | `emitir_par_de_tokens` (helper, no hace `commit`), `registrar_usuario`, `autenticar_usuario` (RN-24), `cerrar_sesion` (RN-26), `rotar_refresh_token` (rotación). Errores: `CorreoYaRegistradoError` → 409, `CredencialesInvalidasError` → 401, `RefreshInvalidoError` → 401. |
+| `app/api/v1/auth.py` | Router `/auth`: `POST /registro` (201), `/login`, `/logout`, `/refresh`. Traduce los errores de servicio a `HTTPException`. |
 | `app/api/v1/router.py` | `api_router` con prefijo `/api/v1`; monta `auth.router`. |
 | `app/main.py` | Monta `api_router` y registra el handler de `RequestValidationError` (RN-22). |
 
@@ -151,9 +228,9 @@ un threadpool.
 
 ### Configuración relevante (`app/core/config.py`, `.env`)
 
-`ACCESS_TOKEN_MINUTOS=15` · `REFRESH_TOKEN_DIAS=30` · `JWT_ALGORITHM=HS256` ·
-`JWT_SECRET` (rechazado si es el valor de ejemplo o mide < 32 caracteres) ·
-`DATABASE_URL`.
+`ACCESS_TOKEN_MINUTOS=15` · `REFRESH_TOKEN_DIAS=30` · `RECUPERACION_TOKEN_MINUTOS=60`
+(aún sin usar, RN-27) · `JWT_ALGORITHM=HS256` · `JWT_SECRET` (rechazado si es el
+valor de ejemplo o mide < 32 caracteres) · `DATABASE_URL`.
 
 ---
 
@@ -173,23 +250,25 @@ un threadpool.
    de red y un modo de falla nuevo (DNS caído → todos los registros fallan) en el
    camino crítico, a cambio de atajar solo el caso raro. Avisar de typos de
    dominio se hace mejor en el frontend, sin bloquear.
-3. **Sin rate limiting ni captcha** en el registro.
-4. **Sin tests automatizados**; la verificación fue smoke manual end-to-end
-   (201 / 409 / 422 sin fuga, fila en BD, hash SHA-256 del refresh).
+3. **Sin rate limiting ni captcha** en login ni registro. Es lo que hace viable
+   la fuerza bruta de contraseñas contra un correo conocido.
+4. **Timing del login: "suficientemente bueno", no constante.** El hash ficticio
+   iguala el coste de Argon2 (lo que domina, ~170 ms), pero la ruta "usuario
+   existe" hace además el `INSERT` del refresh + `commit`. La diferencia medida
+   es de pocos ms, dentro del ruido.
+5. **Sin tests automatizados**; la verificación fue smoke manual end-to-end
+   (registro 201/409/422; login 200/401 con tiempos comparables; logout 200
+   siempre; refresh rota y revoca; reusar un refresh rotado → 401).
 
 ---
 
-## Pendiente para GYM-73 (login)
+## Pendiente (siguiente slice de RF-02)
 
-Las primitivas ya están implementadas y probadas en `app/core/security.py`; el
-login solo tiene que conectarlas:
-
-- `verificar_password(hash, password) -> bool` — no lanza.
-- `necesita_rehash(hash) -> bool` — envuelve `check_needs_rehash`; `False` ante
-  un hash ilegible. Llamarla **tras** un `verificar_password` correcto: si
-  devuelve `True`, `usuario.hash_password = hashear_password(password)` y
-  `commit`. Así los usuarios antiguos migran solos si se suben los parámetros de
-  Argon2. Probado: hash actual → `False`, hash con parámetros débiles → `True`.
-- Conviene igualar el tiempo de respuesta cuando el correo no existe (verificar
-  contra un hash ficticio) para no filtrar qué correos están registrados.
-- Todavía no existe endpoint que canjee el `refresh_token`.
+- `POST /auth/recuperar-password` y `POST /auth/reset-password` (RN-27: enlace
+  que expira en 1 h, un solo uso). Modelo `TokenRecuperacion` ya existe.
+- Al cambiar la contraseña (reset), **revocar todos los refresh del usuario** en
+  cascada: si no, quien robó la cuenta sigue dentro tras la recuperación.
+- `core/mailer.py` + variables SMTP para enviar el enlace. Por ahora el token
+  iría al log.
+- Detección de reúso de refresh que "mata toda la familia" de tokens (hoy la
+  rotación solo revoca el token concreto).

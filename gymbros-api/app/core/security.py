@@ -19,6 +19,12 @@ from app.core.config import settings
 # de coste por defecto son los que recomienda OWASP; no hace falta configurarlos.
 _hasher = PasswordHasher()
 
+# Hash de una contraseña que no existe, calculado una vez al importar. El login
+# lo usa cuando el correo no está registrado: verifica la contraseña contra este
+# hash para pagar el mismo coste de Argon2 (~100 ms) que la ruta en la que el
+# usuario sí existe, y así no revelar por cronometría qué correos hay (RN-24).
+HASH_FICTICIO = _hasher.hash(secrets.token_urlsafe(32))
+
 
 def hashear_password(password: str) -> str:
     """Devuelve el hash Argon2id de la contraseña (incluye sal y parámetros)."""
@@ -61,13 +67,20 @@ def crear_access_token(usuario_id: UUID | str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
+def hashear_token(valor: str) -> str:
+    """SHA-256 hex de un token opaco. Se usa al emitirlo (para guardar el hash)
+    y en cada petición que lo trae (para buscar la fila por hash).
+
+    SHA-256 y no Argon2: son 256 bits aleatorios, no hay nada que adivinar por
+    fuerza bruta y la lentitud de Argon2 solo añadiría latencia en cada lookup.
+    """
+    return hashlib.sha256(valor.encode()).hexdigest()
+
+
 def generar_refresh_token() -> tuple[str, str]:
     """Genera un refresh token opaco. Devuelve `(valor_en_claro, hash_sha256_hex)`.
 
     El valor en claro se entrega al cliente; en la base solo se guarda el hash.
-    Se usa SHA-256 y no Argon2: son 256 bits aleatorios, no hay nada que
-    adivinar por fuerza bruta y la lentitud de Argon2 solo añadiría latencia.
     """
     valor = secrets.token_urlsafe(32)
-    hash_hex = hashlib.sha256(valor.encode()).hexdigest()
-    return valor, hash_hex
+    return valor, hashear_token(valor)
