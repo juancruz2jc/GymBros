@@ -26,6 +26,7 @@ def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | Non
     imc = Decimal(str(peso_kg)) / (altura_m * altura_m)  # RN-12
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
+
 # RF-06: Registrar medición vinculada al usuario autenticado
 def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> MedicionResponse:
     fecha_actual = datetime.now(timezone.utc)
@@ -54,6 +55,7 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
 
     return _a_response(nueva_medicion, usuario.altura_cm)
 
+
 # RF-08: Historial y consulta de mediciones (GYM-79)
 def listar_mediciones(
     db: Session,
@@ -73,6 +75,7 @@ def listar_mediciones(
     filas = db.execute(consulta).scalars().all()
     return [_a_response(fila, usuario.altura_cm) for fila in filas]
 
+
 def obtener_medicion(
     db: Session,
     *,
@@ -87,6 +90,7 @@ def obtener_medicion(
     if fila is None:
         return None
     return _a_response(fila, usuario.altura_cm)
+
 
 # RF-10: Detección de inactividad por umbral de 30 días
 def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
@@ -105,10 +109,15 @@ def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
             "esta_inactivo": False
         }
 
-    fecha_ahora = datetime.now(timezone.utc)
-    fecha_ult = ultima_medicion.fecha.replace(tzinfo=timezone.utc) if ultima_medicion.fecha.tzinfo is None else ultima_medicion.fecha
+    # Normalización a tipo date para evitar conflictos de zona horaria (tz-aware vs tz-naive)
+    fecha_hoy = date.today()
+    fecha_ult = (
+        ultima_medicion.fecha
+        if isinstance(ultima_medicion.fecha, date) and not isinstance(ultima_medicion.fecha, datetime)
+        else ultima_medicion.fecha.date()
+    )
 
-    dias_transcurridos = (fecha_ahora - fecha_ult).days
+    dias_transcurridos = (fecha_hoy - fecha_ult).days
     return {
         "ultima_medicion": ultima_medicion.fecha,
         "dias_desde_ultima_medicion": dias_transcurridos,
