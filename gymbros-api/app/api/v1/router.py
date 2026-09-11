@@ -6,8 +6,6 @@ from app.api.v1 import auth, mediciones
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
-<<<<<<< HEAD
+
 api_router.include_router(mediciones.router)
-=======
 api_router.include_router(mediciones.router)
->>>>>>> origin/feature/GYM-79-historial-mediciones
