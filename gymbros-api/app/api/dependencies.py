@@ -12,13 +12,7 @@ from app.models.usuario import Usuario
 
 
 def get_db() -> Generator[Session, None, None]:
-    """Cede una sesión de base de datos y la cierra al terminar la petición.
-
-    El `finally` es lo que importa: si el endpoint lanza una excepción, sin él
-    la sesión queda abierta y su conexión nunca vuelve al pool. Con `def` (no
-    `async def`) FastAPI ejecuta el endpoint en un hilo aparte, acorde con el
-    acceso a datos síncrono de SQLAlchemy.
-    """
+    """Cede una sesión de base de datos y la cierra al terminar la petición."""
     db = SessionLocal()
     try:
         yield db
