@@ -67,6 +67,33 @@ def crear_access_token(usuario_id: UUID | str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
+def decodificar_access_token(token: str) -> UUID | None:
+    """`usuario_id` que lleva un access token válido, o `None` si no lo es.
+
+    Inversa de `crear_access_token`: verifica la firma (HS256 con `JWT_SECRET`) y
+    la expiración (`exp`). Devuelve `None` —no lanza, igual que
+    `verificar_password`— si el token está mal firmado, expiró, le falta `sub` o
+    `exp`, o `sub` no es un UUID. Quien llama decide qué responder: la
+    dependencia `get_current_user` lo traduce a 401.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.InvalidTokenError:
+        # Cubre firma inválida, token expirado (ExpiredSignatureError) y
+        # malformado: todas heredan de InvalidTokenError.
+        return None
+
+    try:
+        return UUID(str(payload["sub"]))
+    except (KeyError, ValueError):
+        return None
+
+
 def hashear_token(valor: str) -> str:
     """SHA-256 hex de un token opaco. Se usa al emitirlo (para guardar el hash)
     y en cada petición que lo trae (para buscar la fila por hash).
