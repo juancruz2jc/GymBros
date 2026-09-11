@@ -66,6 +66,23 @@ class InactividadRespuesta(BaseModel):
     dias_desde_ultima_medicion: Optional[int] = None
     esta_inactivo: bool = False
 
+class DiferenciasMedicion(BaseModel):
+    peso_kg: Optional[float] = None
+    porcentaje_grasa: Optional[float] = None
+    masa_muscular_kg: Optional[float] = None
+    circunf_cintura_cm: Optional[float] = None
+    circunf_cadera_cm: Optional[float] = None
+    circunf_brazo_cm: Optional[float] = None
+    circunf_pierna_cm: Optional[float] = None
+    circunf_pecho_cm: Optional[float] = None
+    imc: Optional[float] = None
+
+
+class MedicionComparativaResponse(BaseModel):
+    medicion_anterior: MedicionResponse
+    medicion_reciente: MedicionResponse
+    diferencias: DiferenciasMedicion
+
 
 # Topes superiores: son técnicos (capacidad de la columna), no reglas de negocio.
 # Las columnas son `NUMERIC(5,2)` (máx. 999.99), salvo `porcentaje_grasa` que es
