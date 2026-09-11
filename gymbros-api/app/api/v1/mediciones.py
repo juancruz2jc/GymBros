@@ -1,4 +1,4 @@
-"""Endpoints del historial de mediciones (RF-08)."""
+"""Endpoints para la gestión de mediciones corporales (RF-06, RF-07, RF-08, RF-10)."""
 
 from datetime import date
 from uuid import UUID
@@ -8,14 +8,59 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, get_db
 from app.models.usuario import Usuario
-from app.schemas.medicion import MedicionResponse
-from app.services.medicion_service import listar_mediciones, obtener_medicion
+from app.schemas.medicion import (
+    InactividadRespuesta,
+    MedicionCrear,
+    MedicionResponse,
+)
+from app.services import medicion_service
 
 router = APIRouter(prefix="/mediciones", tags=["mediciones"])
 
 
-# `def`, no `async def`: el acceso a datos es síncrono (ver main.py).
-# Protegido: `Depends(get_current_user)` -> 401 sin un access token válido.
+# ---------------------------------------------------------
+# RF-06 / RF-07: Registrar medición corporal
+# ---------------------------------------------------------
+@router.post(
+    "",
+    response_model=MedicionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una nueva medición corporal",
+)
+def registrar_medicion(
+    datos: MedicionCrear,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+) -> MedicionResponse:
+    """Registra una medición vinculada al usuario autenticado (RN-60)."""
+    try:
+        return medicion_service.crear_medicion(db, usuario_actual, datos)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+# ---------------------------------------------------------
+# RF-10: Consulta de inactividad
+# ---------------------------------------------------------
+@router.get(
+    "/inactividad",
+    response_model=InactividadRespuesta,
+    summary="Consulta la alerta de inactividad de mediciones",
+)
+def consultar_inactividad(
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+) -> InactividadRespuesta:
+    """Retorna si el usuario lleva 30 días o más sin registrar mediciones."""
+    return medicion_service.obtener_estado_inactividad(db, usuario_actual)
+
+
+# ---------------------------------------------------------
+# RF-08: Historial de mediciones del usuario
+# ---------------------------------------------------------
 @router.get(
     "",
     response_model=list[MedicionResponse],
@@ -33,23 +78,18 @@ def historial_mediciones(
         description="Fecha máxima inclusive (`YYYY-MM-DD`).",
     ),
 ) -> list[MedicionResponse]:
-    """Mediciones del usuario **del token**, en orden cronológico.
-
-    El historial es siempre el del usuario autenticado: no hay parámetro de
-    usuario en la ruta ni en el cuerpo (RF-08). Orden por fecha de la medición,
-    ascendente (RN-34), no por fecha de registro. `desde`/`hasta` son opcionales
-    e inclusivos; sin ellos se devuelve el historial completo. Cada medición
-    trae su `imc` calculado (RN-12), o `null` si el usuario no tiene altura
-    registrada (RN-09).
-    """
+    """Obtiene el historial en orden cronológico."""
     if desde is not None and hasta is not None and desde > hasta:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="`desde` no puede ser posterior a `hasta`.",
         )
-    return listar_mediciones(db, usuario=usuario, desde=desde, hasta=hasta)
+    return medicion_service.listar_mediciones(db, usuario=usuario, desde=desde, hasta=hasta)
 
 
+# ---------------------------------------------------------
+# RF-08: Detalle de una medición
+# ---------------------------------------------------------
 @router.get(
     "/{medicion_id}",
     response_model=MedicionResponse,
@@ -61,14 +101,8 @@ def detalle_medicion(
     usuario: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MedicionResponse:
-    """Devuelve una medición **del usuario del token** por su id.
-
-    404 si el id no existe **o** es de otra persona: la respuesta es la misma en
-    ambos casos, no se confirma ni se niega que el id exista (no filtrar
-    información → 404, nunca 403). Un `medicion_id` que no sea un UUID válido lo
-    rechaza FastAPI con 422.
-    """
-    medicion = obtener_medicion(db, usuario=usuario, medicion_id=medicion_id)
+    """Devuelve el detalle de una medición por ID."""
+    medicion = medicion_service.obtener_medicion(db, usuario=usuario, medicion_id=medicion_id)
     if medicion is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
