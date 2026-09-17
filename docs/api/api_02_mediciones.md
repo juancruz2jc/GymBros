@@ -182,11 +182,11 @@ cambian solo los campos presentes en el cuerpo; los omitidos quedan como estaban
 
 | Campo | Tipo | Regla |
 |---|---|---|
-| `fecha` | date (`YYYY-MM-DD`) | — |
-| `peso_kg` | number | **> 0** (RN-03) |
+| `fecha` | date (`YYYY-MM-DD`) | **No puede ser posterior a la fecha actual** (RN-70). |
+| `peso_kg` | number | **≥ 0.01** (RN-03) — mínimo representable en la columna `NUMERIC(5,2)`. |
 | `porcentaje_grasa` | number | **0 – 99.99** — RN-04 es 0–100 inclusive; el `100` está acotado temporalmente por la columna (ver *Limitaciones*). |
-| `masa_muscular_kg` | number | **> 0** (RN-05) |
-| `circunf_cintura_cm`, `circunf_cadera_cm`, `circunf_brazo_cm`, `circunf_pierna_cm`, `circunf_pecho_cm` | number | **> 0** (RN-06) |
+| `masa_muscular_kg` | number | **≥ 0.01** (RN-05) — mismo mínimo que `peso_kg`. |
+| `circunf_cintura_cm`, `circunf_cadera_cm`, `circunf_brazo_cm`, `circunf_pierna_cm`, `circunf_pecho_cm` | number | **≥ 0.01** (RN-06) — mismo mínimo que `peso_kg`. |
 
 - **No acepta `usuario_id`** (RN-37): el esquema no lo declara; si llega en el
   cuerpo se **ignora en silencio**, no reasigna la medición.
@@ -268,10 +268,11 @@ curl -i -X DELETE http://localhost:8001/api/v1/mediciones/8f14e45f-cea1-4c0b-9f6
 | RN-08 | Una medición registrada no puede ser leída, editada ni borrada por otro deportista | Las cuatro funciones (`obtener` / `actualizar` / `eliminar_medicion`) llevan `id` **y** `usuario_id` en el mismo `WHERE`. No hay "buscar por id y luego comparar `usuario_id` en un `if`". Ajena → `None`/`rowcount 0` → 404. |
 | RN-36 | Eliminar una medición es definitivo (sin papelera) | `eliminar_medicion` hace `DELETE` físico (`sqlalchemy.delete`), no marca una columna de baja. No hay tabla de papelera. |
 | RN-37 | Editar nunca reasigna la medición a otro `usuario_id` | `MedicionActualizar` no declara `usuario_id`; `actualizar_medicion` además hace `cambios.pop("usuario_id", None)` antes de aplicar. El `WHERE` de la búsqueda tampoco permite tocar una fila ajena. |
-| RN-03 | `peso_kg` > 0 | `Field(gt=0)` en `MedicionActualizar.peso_kg` → 422 si ≤ 0. |
+| RN-03 | `peso_kg` > 0 | `Field(ge=0.01)` en `MedicionActualizar.peso_kg` → 422 si `≤ 0` **o** si es un valor positivo que redondearía a `0.00` al persistir en `NUMERIC(5,2)` (p. ej. `0.001`) — corregido en GYM-176: antes era `Field(gt=0)`, que dejaba pasar esos valores y el `PUT` los guardaba silenciosamente como `0.00`. |
 | RN-04 | `porcentaje_grasa` entre 0 y 100 (inclusive) | `Field(ge=0, le=99.99)` → 422 fuera de rango. El tope está en `99.99` y no en `100` como tapón temporal por la capacidad de la columna (ver *Limitaciones*); RN-04 literal queda pendiente de una migración. |
-| RN-05 | `masa_muscular_kg` > 0 | `Field(gt=0)` → 422 si ≤ 0. |
-| RN-06 | Circunferencias > 0 | `Field(gt=0)` en los cinco `circunf_*_cm` → 422 si ≤ 0. |
+| RN-05 | `masa_muscular_kg` > 0 | `Field(ge=0.01)` → 422 si `≤ 0` o si redondea a `0.00` (mismo fix de GYM-176 que `peso_kg`). |
+| RN-06 | Circunferencias > 0 | `Field(ge=0.01)` en los cinco `circunf_*_cm` → 422 si `≤ 0` o si redondea a `0.00` (mismo fix de GYM-176). |
+| RN-70 | `fecha` no puede ser posterior a la fecha actual | `field_validator` en `MedicionActualizar.fecha` (`schemas/medicion.py`) → 422 si la fecha es futura. Corregido en GYM-169: el `PUT` no tenía esta validación (solo el `POST`, en `crear_medicion`) y aceptaba fechas futuras con `200`. |
 | RN-12 | `IMC = peso_kg / (altura_m)²` | `medicion_service.calcular_imc`, redondeado a 1 decimal (`ROUND_HALF_UP`). Se recalcula en la respuesta del `PUT`. |
 | RN-30 | El IMC usa la altura **vigente** del usuario, no la de la fecha de la medición | `calcular_imc` recibe `usuario.altura_cm` (columna `usuarios.altura_cm`), no un valor histórico. |
 | RN-34 | Orden por fecha de la medición, no por fecha de registro | `order_by(Medicion.fecha.asc(), Medicion.creado_en.asc())` — `creado_en` solo como desempate. |
@@ -399,3 +400,21 @@ usuario **B** con 1 medición (`2025-04-02`, 65 kg).
    genera desde esta historia para no ramificar heads de Alembic).
 7. **Sin tests automatizados** (pytest no se ha visto en el curso); la
    verificación son las tablas de casos de prueba de arriba, ejecutadas a mano.
+8. **RN-70 en `POST` responde `400`, en `PUT` responde `422` (GYM-169).** El
+   `POST` (`crear_medicion`) valida la fecha futura a mano con un `ValueError`
+   que el router traduce a `400`. El `PUT` ahora la valida con un
+   `field_validator` de Pydantic (`MedicionActualizar.fecha`), consistente con
+   RN-03 a RN-06 del mismo schema, que da `422`. Queda **pendiente de decisión
+   de equipo** unificar el criterio (candidato: migrar también el `POST` a
+   `422`) — no se tocó `crear_medicion` en esta corrección por no ser parte del
+   alcance de GYM-169.
+9. **`GET /mediciones/inactividad` — `500` no relacionado, detectado al validar
+   GYM-169/GYM-170.** `obtener_estado_inactividad` (`medicion_service.py`)
+   asume que `Medicion.fecha` es un `datetime` con `.tzinfo`, pero la columna es
+   `Date` (ver `models/medicion.py`) — la comparación revienta con
+   `AttributeError: 'datetime.date' object has no attribute 'tzinfo'` en
+   **cualquier** medición, incluso creada solo por `POST`, sin pasar por `PUT`.
+   No es un efecto de GYM-169/176 ni se reproduce por esa vía: es previo y
+   bloquea además comprobar en vivo si GYM-170 (días negativos) sigue
+   reproduciéndose. No se corrigió aquí por no ser parte de los 3 tickets de
+   esta rama; queda para reportar aparte.
