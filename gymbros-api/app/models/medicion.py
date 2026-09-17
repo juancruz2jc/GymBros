@@ -15,7 +15,7 @@ class Medicion(Base):
     usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), index=True, nullable=False)
     fecha = Column(Date, nullable=False)
     peso_kg = Column(Numeric(5, 2), nullable=False)
-    porcentaje_grasa = Column(Numeric(4, 2), nullable=True)
+    porcentaje_grasa = Column(Numeric(5, 2), nullable=True)
     masa_muscular_kg = Column(Numeric(5, 2), nullable=True)
     circunf_cintura_cm = Column(Numeric(5, 2), nullable=True)
     circunf_cadera_cm = Column(Numeric(5, 2), nullable=True)
