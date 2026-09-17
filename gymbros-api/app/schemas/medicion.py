@@ -66,20 +66,30 @@ class InactividadRespuesta(BaseModel):
     dias_desde_ultima_medicion: Optional[int] = None
     esta_inactivo: bool = False
 
+class DiferenciasMedicion(BaseModel):
+    peso_kg: Optional[float] = None
+    porcentaje_grasa: Optional[float] = None
+    masa_muscular_kg: Optional[float] = None
+    circunf_cintura_cm: Optional[float] = None
+    circunf_cadera_cm: Optional[float] = None
+    circunf_brazo_cm: Optional[float] = None
+    circunf_pierna_cm: Optional[float] = None
+    circunf_pecho_cm: Optional[float] = None
+    imc: Optional[float] = None
+
+
+class MedicionComparativaResponse(BaseModel):
+    medicion_anterior: MedicionResponse
+    medicion_reciente: MedicionResponse
+    diferencias: DiferenciasMedicion
+
 
 # Topes superiores: son técnicos (capacidad de la columna), no reglas de negocio.
-# Las columnas son `NUMERIC(5,2)` (máx. 999.99), salvo `porcentaje_grasa` que es
-# `NUMERIC(4,2)` (máx. 99.99).
+# Todas las columnas de medidas son `NUMERIC(5,2)` (máx. 999.99).
 _MAX_NUMERIC_5_2 = 999.99
-# RN-04 dice "0 a 100" inclusivo, pero la columna solo llega a 99.99. Se acota a
-# 99.99 como TAPÓN TEMPORAL para que ningún valor válido según el schema falle al
-# persistir (un 500). La solución definitiva es una migración que ensanche la
-# columna a NUMERIC(5,2); está pendiente de coordinar con el equipo. Ver
-# docs/api/api_02_mediciones.md (Limitaciones).
-_MAX_GRASA_COLUMNA = 99.99
 
 _Peso = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-03: peso > 0
-_Grasa = Annotated[float, Field(ge=0, le=_MAX_GRASA_COLUMNA)]  # RN-04 (acotado, ver arriba)
+_Grasa = Annotated[float, Field(ge=0, le=100)]  # RN-04: 0 a 100 inclusive
 _Positivo = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-05/RN-06: > 0
 
 

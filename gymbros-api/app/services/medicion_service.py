@@ -5,12 +5,13 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, select, func
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
 from app.models.usuario import Usuario
-from app.schemas.medicion import IMCRespuesta, MedicionActualizar, MedicionCrear, MedicionResponse
+from app.schemas.medicion import IMCRespuesta, MedicionActualizar, MedicionCrear, MedicionResponse, DiferenciasMedicion, MedicionComparativaResponse, IMCRespuesta
+
 
 # Columnas NOT NULL de `mediciones`: un `null` explícito en el cuerpo del PUT no
 # puede vaciarlas, así que se ignora.
@@ -25,6 +26,7 @@ def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | Non
     altura_m = Decimal(altura_cm) / Decimal(100)
     imc = Decimal(str(peso_kg)) / (altura_m * altura_m)  # RN-12
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
 
 # RF-06: Registrar medición vinculada al usuario autenticado
 def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> MedicionResponse:
@@ -54,6 +56,7 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
 
     return _a_response(nueva_medicion, usuario.altura_cm)
 
+
 # RF-08: Historial y consulta de mediciones (GYM-79)
 def listar_mediciones(
     db: Session,
@@ -73,6 +76,7 @@ def listar_mediciones(
     filas = db.execute(consulta).scalars().all()
     return [_a_response(fila, usuario.altura_cm) for fila in filas]
 
+
 def obtener_medicion(
     db: Session,
     *,
@@ -87,6 +91,7 @@ def obtener_medicion(
     if fila is None:
         return None
     return _a_response(fila, usuario.altura_cm)
+
 
 # RF-10: Detección de inactividad por umbral de 30 días
 def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
@@ -105,10 +110,15 @@ def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
             "esta_inactivo": False
         }
 
-    fecha_ahora = datetime.now(timezone.utc)
-    fecha_ult = ultima_medicion.fecha.replace(tzinfo=timezone.utc) if ultima_medicion.fecha.tzinfo is None else ultima_medicion.fecha
+    # Normalización a tipo date para evitar conflictos de zona horaria (tz-aware vs tz-naive)
+    fecha_hoy = date.today()
+    fecha_ult = (
+        ultima_medicion.fecha
+        if isinstance(ultima_medicion.fecha, date) and not isinstance(ultima_medicion.fecha, datetime)
+        else ultima_medicion.fecha.date()
+    )
 
-    dias_transcurridos = (fecha_ahora - fecha_ult).days
+    dias_transcurridos = (fecha_hoy - fecha_ult).days
     return {
         "ultima_medicion": ultima_medicion.fecha,
         "dias_desde_ultima_medicion": dias_transcurridos,
@@ -185,3 +195,58 @@ def _a_response(medicion: Medicion, altura_cm: int | None) -> MedicionResponse:
     respuesta = MedicionResponse.model_validate(medicion)
     respuesta.imc = calcular_imc(medicion.peso_kg, altura_cm)
     return respuesta
+
+
+# RF-09: Comparar dos mediciones por fecha
+def comparar_mediciones(
+    db: Session,
+    *,
+    usuario: Usuario,
+    fecha1: date,
+    fecha2: date,
+) -> Optional[MedicionComparativaResponse]:
+    # Consultar ambas mediciones para el usuario
+    med1 = db.execute(
+        select(Medicion).where(Medicion.usuario_id == usuario.id, 
+        func.date(Medicion.fecha) == fecha1)
+    ).scalar_one_or_none()
+
+    med2 = db.execute(
+        select(Medicion).where(Medicion.usuario_id == usuario.id, 
+        func.date(Medicion.fecha) == fecha2)
+    ).scalar_one_or_none()
+
+    if not med1 or not med2:
+        return None
+
+    # Ordenar cronológicamente para que la resta sea (reciente - anterior)
+    if med1.fecha <= med2.fecha:
+        m_anterior, m_reciente = med1, med2
+    else:
+        m_anterior, m_reciente = med2, med1
+
+    res_anterior = _a_response(m_anterior, usuario.altura_cm)
+    res_reciente = _a_response(m_reciente, usuario.altura_cm)
+
+    def _diff(v_rec: float | None, v_ant: float | None) -> float | None:
+        if v_rec is None or v_ant is None:
+            return None
+        return round(v_rec - v_ant, 2)
+
+    diferencias = DiferenciasMedicion(
+        peso_kg=_diff(res_reciente.peso_kg, res_anterior.peso_kg),
+        porcentaje_grasa=_diff(res_reciente.porcentaje_grasa, res_anterior.porcentaje_grasa),
+        masa_muscular_kg=_diff(res_reciente.masa_muscular_kg, res_anterior.masa_muscular_kg),
+        circunf_cintura_cm=_diff(res_reciente.circunf_cintura_cm, res_anterior.circunf_cintura_cm),
+        circunf_cadera_cm=_diff(res_reciente.circunf_cadera_cm, res_anterior.circunf_cadera_cm),
+        circunf_brazo_cm=_diff(res_reciente.circunf_brazo_cm, res_anterior.circunf_brazo_cm),
+        circunf_pierna_cm=_diff(res_reciente.circunf_pierna_cm, res_anterior.circunf_pierna_cm),
+        circunf_pecho_cm=_diff(res_reciente.circunf_pecho_cm, res_anterior.circunf_pecho_cm),
+        imc=_diff(res_reciente.imc, res_anterior.imc),
+    )
+
+    return MedicionComparativaResponse(
+        medicion_anterior=res_anterior,
+        medicion_reciente=res_reciente,
+        diferencias=diferencias,
+    )

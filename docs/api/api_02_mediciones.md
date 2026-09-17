@@ -184,7 +184,7 @@ cambian solo los campos presentes en el cuerpo; los omitidos quedan como estaban
 |---|---|---|
 | `fecha` | date (`YYYY-MM-DD`) | — |
 | `peso_kg` | number | **> 0** (RN-03) |
-| `porcentaje_grasa` | number | **0 – 99.99** — RN-04 es 0–100 inclusive; el `100` está acotado temporalmente por la columna (ver *Limitaciones*). |
+| `porcentaje_grasa` | number | **0 – 100** (RN-04) |
 | `masa_muscular_kg` | number | **> 0** (RN-05) |
 | `circunf_cintura_cm`, `circunf_cadera_cm`, `circunf_brazo_cm`, `circunf_pierna_cm`, `circunf_pecho_cm` | number | **> 0** (RN-06) |
 
@@ -269,7 +269,7 @@ curl -i -X DELETE http://localhost:8001/api/v1/mediciones/8f14e45f-cea1-4c0b-9f6
 | RN-36 | Eliminar una medición es definitivo (sin papelera) | `eliminar_medicion` hace `DELETE` físico (`sqlalchemy.delete`), no marca una columna de baja. No hay tabla de papelera. |
 | RN-37 | Editar nunca reasigna la medición a otro `usuario_id` | `MedicionActualizar` no declara `usuario_id`; `actualizar_medicion` además hace `cambios.pop("usuario_id", None)` antes de aplicar. El `WHERE` de la búsqueda tampoco permite tocar una fila ajena. |
 | RN-03 | `peso_kg` > 0 | `Field(gt=0)` en `MedicionActualizar.peso_kg` → 422 si ≤ 0. |
-| RN-04 | `porcentaje_grasa` entre 0 y 100 (inclusive) | `Field(ge=0, le=99.99)` → 422 fuera de rango. El tope está en `99.99` y no en `100` como tapón temporal por la capacidad de la columna (ver *Limitaciones*); RN-04 literal queda pendiente de una migración. |
+| RN-04 | `porcentaje_grasa` entre 0 y 100 (inclusive) | `Field(ge=0, le=100)` → 422 fuera de rango. La columna es `NUMERIC(5,2)` desde la migración `9579bae4a653`, así que el `100` cabe sin overflow. |
 | RN-05 | `masa_muscular_kg` > 0 | `Field(gt=0)` → 422 si ≤ 0. |
 | RN-06 | Circunferencias > 0 | `Field(gt=0)` en los cinco `circunf_*_cm` → 422 si ≤ 0. |
 | RN-12 | `IMC = peso_kg / (altura_m)²` | `medicion_service.calcular_imc`, redondeado a 1 decimal (`ROUND_HALF_UP`). Se recalcula en la respuesta del `PUT`. |
@@ -388,14 +388,5 @@ usuario **B** con 1 medición (`2025-04-02`, 65 kg).
 5. **`imc` depende de un dato de perfil.** Si `usuarios.altura_cm` es `null`
    (perfil incompleto), todas las mediciones salen con `imc: null` aunque tengan
    peso.
-6. **`porcentaje_grasa` — RN-04 vs. columna (tapón temporal).** RN-04 define el
-   rango como `0` a `100` **inclusive**, pero la columna es `NUMERIC(4,2)`
-   (máx. `99.99`). El schema acota `porcentaje_grasa` a `le=99.99` **como medida
-   provisional**, solo para que ningún valor aceptado por la validación pueda
-   fallar al persistir (un 500 en el valor límite `100`). **No es la solución
-   final:** para cumplir RN-04 al pie de la letra hace falta una **migración que
-   ensanche la columna a `NUMERIC(5,2)`** y luego subir el tope del schema a
-   `100`. Esa migración **está pendiente de coordinar con el equipo** (no se
-   genera desde esta historia para no ramificar heads de Alembic).
-7. **Sin tests automatizados** (pytest no se ha visto en el curso); la
+6. **Sin tests automatizados** (pytest no se ha visto en el curso); la
    verificación son las tablas de casos de prueba de arriba, ejecutadas a mano.
