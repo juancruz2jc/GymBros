@@ -112,9 +112,9 @@ class MedicionResponse(BaseModel):
     creado_en: datetime
 
 
-# Datos relacionados con la inactividad
+# Datos relacionados con la inactividad (H-10 / GYM-82)
 class InactividadRespuesta(BaseModel):
-    ultima_medicion: Optional[datetime] = None
+    ultima_medicion: Optional[date] = None
     dias_desde_ultima_medicion: Optional[int] = None
     esta_inactivo: bool = False
 
@@ -158,4 +158,3 @@ class MedicionActualizar(BaseModel):
         if valor > datetime.now(timezone.utc).date():
             raise ValueError("La fecha de medición no puede ser futura")
         return valor
-    
