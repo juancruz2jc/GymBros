@@ -99,7 +99,7 @@ genera solo a partir de las anotaciones de tipos del código.
 | Apagar | `docker compose down` |
 | Borrar la base y empezar limpio | `docker compose down -v` |
 | Ver los logs de la API | `docker compose logs -f api` |
-| Terminal dentro del contenedor | `docker compose exec api bash` |
+| Terminal dentro del contenedor | `docker compose exec api sh` (la imagen es Alpine, no trae `bash`) |
 | Consola de PostgreSQL | `docker compose exec db psql -U gymbros -d gymbros` |
 | Aplicar migraciones | `docker compose exec api alembic upgrade head` |
 

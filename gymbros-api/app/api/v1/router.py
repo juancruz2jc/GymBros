@@ -9,3 +9,4 @@ api_router.include_router(auth.router)
 api_router.include_router(usuarios.router)
 api_router.include_router(mediciones.router)
 api_router.include_router(ejercicios.router)
+

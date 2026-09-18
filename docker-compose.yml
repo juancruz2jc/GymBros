@@ -1,16 +1,16 @@
 services:
   db:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: gymbros
-      POSTGRES_PASSWORD: gymbros
-      POSTGRES_DB: gymbros
+    # Las credenciales (POSTGRES_USER/PASSWORD/DB) salen del .env, no de aquí.
+    # El contenedor recibe también las demás variables del archivo; PostgreSQL
+    # ignora las que no conoce.
+    env_file: ./gymbros-api/.env
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gymbros"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10

@@ -28,7 +28,7 @@ _ERROR_CREDENCIALES = "Correo o contraseña incorrectos."
 _ERROR_REFRESH = "Refresh token inválido o expirado."
 
 
-# `def`, no `async def`: el servicio hace acceso a datos síncrono (ver main.py).
+# `def`, no `async def`: el servicio hace acceso a datos síncrono
 @router.post(
     "/registro",
     response_model=TokenResponse,
