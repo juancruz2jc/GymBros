@@ -34,11 +34,6 @@ Lista los ejercicios **activos** del catálogo, con filtros opcionales.
   `?grupo_muscular=Pecho` y `?grupo_muscular=pecho` son equivalentes.
 - Los filtros se combinan con **AND**. Sin ningún filtro se devuelve el
   catálogo activo completo.
-- **Un filtro presente pero vacío se trata como ausente** (GYM-179):
-  `?grupo_muscular=` es equivalente a no mandar `grupo_muscular`, no a filtrar
-  por la cadena vacía. Aplica igual a `equipo` y `categoria`, y a
-  combinaciones (`?grupo_muscular=&equipo=mancuerna` filtra solo por
-  `equipo`).
 - Un valor que no existe en el catálogo (`?equipo=trineo`) no es un error:
   simplemente devuelve `[]`.
 - Orden de salida: por `grupo_muscular` y luego por `nombre_es`.
@@ -110,7 +105,7 @@ curl "http://localhost:8001/api/v1/ejercicios?categoria=powerlifting"
 |---|---|
 | `app/models/entrenamiento.py` | Modelo `Ejercicio` (tabla `ejercicios`): `nombre_es`, `nombre_en`, `grupo_muscular`, `equipo`, `categoria`, `gif_url`, `activo`. Ya existía; RF-12 no añadió columnas. |
 | `app/schemas/ejercicio.py` | `EjercicioResponse` (salida). Sin esquema de entrada: RN-38. |
-| `app/services/ejercicio_service.py` | `listar_catalogo(db, *, grupo_muscular, equipo, categoria)`: aplica RN-39 y los filtros. `_normalizar_filtro` trata un filtro vacío (post-`strip()`) como `None` (GYM-179). Sin nada de FastAPI. |
+| `app/services/ejercicio_service.py` | `listar_catalogo(db, *, grupo_muscular, equipo, categoria)`: aplica RN-39 y los filtros. Sin nada de FastAPI. |
 | `app/api/v1/ejercicios.py` | Router `/ejercicios`: `GET ""` con los tres filtros como `Query(...)`. Traduce a `list[EjercicioResponse]`. |
 | `app/api/v1/router.py` | Monta `ejercicios.router` bajo `/api/v1`. |
 | `scripts/seed_ejercicios.py` | Carga el dataset de maquetado (~40 ejercicios, 2 inactivos para probar RN-39). Se corre a mano. |
@@ -131,9 +126,6 @@ casos quedan documentados aquí. Requisito previo: base migrada
 > de RN-39 se ejecutaron contra el stack de `docker compose` (API en
 > `localhost:8001`, PostgreSQL 16, migraciones en `444873b25785`, seed idempotente
 > con 43 filas: 41 activas + 2 inactivas). **Todos pasan.**
->
-> **Casos 9–12 (GYM-179, filtros vacíos) probados en runtime — 2026-09-17.**
-> Mismo stack. **Todos pasan** tras el fix en `listar_catalogo`.
 
 | # | Petición | Resultado esperado |
 |---|---|---|
@@ -145,10 +137,6 @@ casos quedan documentados aquí. Requisito previo: base migrada
 | 6 | `GET /api/v1/ejercicios?grupo_muscular=Pecho` | `200`; **igual que el caso 2** (la entrada se normaliza a minúsculas). |
 | 7 | `GET /api/v1/ejercicios?categoria=powerlifting` | `200` con cuerpo `[]` (valor inexistente, no es error). |
 | 8 | `GET /api/v1/ejercicios?grupo_muscular=piernas` | `200`; el ejercicio inactivo `Hip Adductor Machine` (grupo `piernas`) **no** aparece → verifica RN-39. |
-| 9 | `GET /api/v1/ejercicios?grupo_muscular=` | `200`; **igual que el caso 1** (41 activos) — filtro vacío tratado como ausente (GYM-179). |
-| 10 | `GET /api/v1/ejercicios?equipo=` | `200`; igual que el caso 1. |
-| 11 | `GET /api/v1/ejercicios?categoria=` | `200`; igual que el caso 1. |
-| 12 | `GET /api/v1/ejercicios?grupo_muscular=&equipo=mancuerna` | `200`; **igual que el caso 3** — el filtro vacío se ignora y solo aplica `equipo=mancuerna`. |
 
 ### Verificación de RN-39 en Swagger
 

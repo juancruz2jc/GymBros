@@ -6,12 +6,18 @@ from typing import List, Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
 from app.models.usuario import Usuario
-from app.schemas.medicion import IMCRespuesta, MedicionActualizar, MedicionCrear, MedicionResponse
+from app.schemas.medicion import (
+    DiferenciasMedicion,
+    MedicionActualizar,
+    MedicionComparativaResponse,
+    MedicionCrear,
+    MedicionResponse,
+)
 
 # H-05: Zona horaria oficial para evitar desfases con UTC
 ZONA_COLOMBIA = ZoneInfo("America/Bogota")
@@ -184,3 +190,65 @@ def _a_response(medicion: Medicion, altura_cm: int | None) -> MedicionResponse:
     respuesta = MedicionResponse.model_validate(medicion)
     respuesta.imc = calcular_imc(medicion.peso_kg, altura_cm)
     return respuesta
+
+
+# RF-09: Comparar dos mediciones por fecha
+def comparar_mediciones(
+    db: Session,
+    *,
+    usuario: Usuario,
+    fecha1: date,
+    fecha2: date,
+) -> Optional[MedicionComparativaResponse]:
+    # Consultar ambas mediciones para el usuario
+    med1 = db.execute(
+        select(Medicion).where(
+            Medicion.usuario_id == usuario.id,
+            Medicion.fecha == fecha1,
+        )
+        .order_by(desc(Medicion.creado_en))
+
+    ).first()
+
+    med2 = db.execute(
+        select(Medicion).where(
+            Medicion.usuario_id == usuario.id,
+            Medicion.fecha == fecha2,
+        )
+        .order_by(desc(Medicion.creado_en))
+    ).first()
+
+    if not med1 or not med2:
+        return None
+
+    # Ordenar cronológicamente para que la resta sea (reciente - anterior)
+    if med1.fecha <= med2.fecha:
+        m_anterior, m_reciente = med1, med2
+    else:
+        m_anterior, m_reciente = med2, med1
+
+    res_anterior = _a_response(m_anterior, usuario.altura_cm)
+    res_reciente = _a_response(m_reciente, usuario.altura_cm)
+
+    def _diff(v_rec: float | None, v_ant: float | None) -> float | None:
+        if v_rec is None or v_ant is None:
+            return None
+        return round(v_rec - v_ant, 2)
+
+    diferencias = DiferenciasMedicion(
+        peso_kg=_diff(res_reciente.peso_kg, res_anterior.peso_kg),
+        porcentaje_grasa=_diff(res_reciente.porcentaje_grasa, res_anterior.porcentaje_grasa),
+        masa_muscular_kg=_diff(res_reciente.masa_muscular_kg, res_anterior.masa_muscular_kg),
+        circunf_cintura_cm=_diff(res_reciente.circunf_cintura_cm, res_anterior.circunf_cintura_cm),
+        circunf_cadera_cm=_diff(res_reciente.circunf_cadera_cm, res_anterior.circunf_cadera_cm),
+        circunf_brazo_cm=_diff(res_reciente.circunf_brazo_cm, res_anterior.circunf_brazo_cm),
+        circunf_pierna_cm=_diff(res_reciente.circunf_pierna_cm, res_anterior.circunf_pierna_cm),
+        circunf_pecho_cm=_diff(res_reciente.circunf_pecho_cm, res_anterior.circunf_pecho_cm),
+        imc=_diff(res_reciente.imc, res_anterior.imc),
+    )
+
+    return MedicionComparativaResponse(
+        medicion_anterior=res_anterior,
+        medicion_reciente=res_reciente,
+        diferencias=diferencias,
+    )

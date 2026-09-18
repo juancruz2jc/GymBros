@@ -11,6 +11,7 @@ from app.models.usuario import Usuario
 from app.schemas.medicion import (
     InactividadRespuesta,
     MedicionActualizar,
+    MedicionComparativaResponse,
     MedicionCrear,
     MedicionResponse,
 )
@@ -87,7 +88,41 @@ def historial_mediciones(
         )
     return medicion_service.listar_mediciones(db, usuario=usuario, desde=desde, hasta=hasta)
 
+# ---------------------------------------------------------
+# RF-09: Comparación de mediciones por fecha
+# ---------------------------------------------------------
+@router.get(
+    "/comparar",
+    response_model=MedicionComparativaResponse,
+    summary="Comparar dos mediciones por fecha",
+    responses={
+        404: {"description": "No se encontraron registros en una o ambas fechas"},
+        400: {"description": "Las fechas deben ser distintas"},
+    },
+)
+def comparar_mediciones(
+    fecha1: date = Query(..., description="Primera fecha a comparar (`YYYY-MM-DD`)"),
+    fecha2: date = Query(..., description="Segunda fecha a comparar (`YYYY-MM-DD`)"),
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MedicionComparativaResponse:
+    """Compara dos registros de medición del usuario y calcula sus diferencias."""
+    if fecha1 == fecha2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes ingresar dos fechas distintas para realizar la comparación.",
+        )
 
+    resultado = medicion_service.comparar_mediciones(
+        db, usuario=usuario, fecha1=fecha1, fecha2=fecha2
+    )
+    if resultado is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontró registro de medición para una o ambas fechas indicadas.",
+        )
+    return resultado
+    
 # ---------------------------------------------------------
 # RF-08: Detalle de una medición
 # ---------------------------------------------------------

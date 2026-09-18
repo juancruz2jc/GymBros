@@ -10,16 +10,6 @@ from sqlalchemy.orm import Session
 from app.models.entrenamiento import Ejercicio
 
 
-def _normalizar_filtro(valor: str | None) -> str | None:
-    """Trata un filtro presente pero vacío (`?grupo_muscular=`) como "sin
-    filtro" (None), en vez de filtrar por la cadena vacía literal (GYM-179).
-    """
-    if valor is None:
-        return None
-    valor = valor.strip()
-    return valor or None
-
-
 def listar_catalogo(
     db: Session,
     *,
@@ -42,16 +32,14 @@ def listar_catalogo(
     """
     consulta = select(Ejercicio).where(Ejercicio.activo.is_(True))  # RN-39
 
-    grupo_muscular = _normalizar_filtro(grupo_muscular)
-    equipo = _normalizar_filtro(equipo)
-    categoria = _normalizar_filtro(categoria)
-
     if grupo_muscular is not None:
-        consulta = consulta.where(Ejercicio.grupo_muscular == grupo_muscular.lower())
+        consulta = consulta.where(
+            Ejercicio.grupo_muscular == grupo_muscular.strip().lower()
+        )
     if equipo is not None:
-        consulta = consulta.where(Ejercicio.equipo == equipo.lower())
+        consulta = consulta.where(Ejercicio.equipo == equipo.strip().lower())
     if categoria is not None:
-        consulta = consulta.where(Ejercicio.categoria == categoria.lower())
+        consulta = consulta.where(Ejercicio.categoria == categoria.strip().lower())
 
     # Orden estable y útil para maquetar: por grupo muscular y luego por nombre.
     consulta = consulta.order_by(Ejercicio.grupo_muscular, Ejercicio.nombre_es)

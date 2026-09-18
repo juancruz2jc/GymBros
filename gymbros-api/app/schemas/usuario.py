@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Dict, Any
 from uuid import UUID
 
@@ -21,12 +21,3 @@ class UsuarioUpdate(BaseModel):
     altura_cm: Optional[int] = Field(None, gt=50, lt=300)
     foto_url: Optional[str] = Field(None, max_length=500)
     preferencias_notificacion: Optional[Dict[str, Any]] = None
-
-    @field_validator("nombre", mode="before")
-    @classmethod
-    def sanitizar_y_validar_nombre(cls, v: str | None) -> str | None:
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
-                raise ValueError("El nombre no puede estar vacío ni contener solo espacios en blanco.")
-        return v

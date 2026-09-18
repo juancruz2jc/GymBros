@@ -1,98 +1,47 @@
-"""Esquemas del recurso de mediciones."""
+"""Esquemas del recurso de mediciones (RF-06, RF-07, RF-08, RF-10, RF-11).
 
-from datetime import date, datetime, timezone
+`MedicionResponse` es la salida (registro, historial y detalle).
+`MedicionActualizar` es la entrada de `PUT /mediciones/{id}`: solo los campos
+editables, con los rangos de RN-03 a RN-06, y **sin `usuario_id`** — una
+edición no puede reasignar la medición a otra persona (RN-37).
+"""
+
+import uuid
+from datetime import date, datetime
 from typing import Annotated, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
-# Límites de los campos numéricos
-_MAX_NUMERIC_5_2 = 999.99
-_MAX_GRASA_COLUMNA = 99.99
-
-# Evita guardar valores que terminen redondeándose a 0.00
-_MIN_NUMERIC_5_2 = 0.01
-
-
-_Peso = Annotated[float, Field(ge=_MIN_NUMERIC_5_2, le=_MAX_NUMERIC_5_2)]
-_Grasa = Annotated[float, Field(ge=0, le=_MAX_GRASA_COLUMNA)]
-_Positivo = Annotated[float, Field(ge=_MIN_NUMERIC_5_2, le=_MAX_NUMERIC_5_2)]
-
-
-# Datos para crear una medición
+# ---------------------------------------------------------
+# Entrada: Registrar medición (RF-06)
+# ---------------------------------------------------------
 class MedicionCrear(BaseModel):
-    fecha: datetime = Field(
-        ...,
-        description="Fecha de la medición (no puede ser futura)"
-    )
+    fecha: datetime = Field(..., description="Fecha de la medición (RN-70: no puede ser futura)")
+    peso_kg: float = Field(..., gt=0, description="Peso corporal en kg (debe ser mayor a 0)")
 
-    peso_kg: _Peso = Field(
-        ...,
-        description="Peso corporal en kg"
-    )
+    porcentaje_grasa: Optional[float] = Field(None, ge=0, le=100)
+    masa_muscular_kg: Optional[float] = Field(None, gt=0)
 
-    porcentaje_grasa: Optional[_Grasa] = Field(
-        None,
-        description="Porcentaje de grasa"
-    )
-
-    masa_muscular_kg: Optional[_Positivo] = Field(
-        None,
-        description="Masa muscular en kg"
-    )
-
-    circunf_cintura_cm: Optional[_Positivo] = Field(
-        None,
-        description="Circunferencia de cintura"
-    )
-
-    circunf_cadera_cm: Optional[_Positivo] = Field(
-        None,
-        description="Circunferencia de cadera"
-    )
-
-    circunf_brazo_cm: Optional[_Positivo] = Field(
-        None,
-        description="Circunferencia de brazo"
-    )
-
-    circunf_pierna_cm: Optional[_Positivo] = Field(
-        None,
-        description="Circunferencia de pierna"
-    )
-
-    circunf_pecho_cm: Optional[_Positivo] = Field(
-        None,
-        description="Circunferencia de pecho"
-    )
-
-    @field_validator(
-        "peso_kg",
-        "porcentaje_grasa",
-        "masa_muscular_kg",
-        "circunf_cintura_cm",
-        "circunf_cadera_cm",
-        "circunf_brazo_cm",
-        "circunf_pierna_cm",
-        "circunf_pecho_cm",
-        mode="before",
-    )
-    @classmethod
-    def _rechazar_booleanos(cls, valor):
-        if isinstance(valor, bool):
-            raise ValueError("Los campos numéricos no pueden ser booleanos")
-        return valor
+    circunf_cintura_cm: Optional[float] = Field(None, gt=0)
+    circunf_cadera_cm: Optional[float] = Field(None, gt=0)
+    circunf_brazo_cm: Optional[float] = Field(None, gt=0)
+    circunf_pierna_cm: Optional[float] = Field(None, gt=0)
+    circunf_pecho_cm: Optional[float] = Field(None, gt=0)
 
 
-# Respuesta del IMC
+# ---------------------------------------------------------
+# Estructuras de Salida (RF-07, RF-08, RF-10)
+# ---------------------------------------------------------
 class IMCRespuesta(BaseModel):
     valor: float
     categoria: str
 
 
-# Datos que se muestran de una medición
 class MedicionResponse(BaseModel):
+    """Respuesta unificada para registro, historial y detalle de mediciones."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -112,16 +61,59 @@ class MedicionResponse(BaseModel):
     creado_en: datetime
 
 
-# Datos relacionados con la inactividad (H-10 / GYM-82)
 class InactividadRespuesta(BaseModel):
-    ultima_medicion: Optional[date] = None
+    ultima_medicion: Optional[datetime] = None
     dias_desde_ultima_medicion: Optional[int] = None
     esta_inactivo: bool = False
 
+class DiferenciasMedicion(BaseModel):
+    peso_kg: Optional[float] = None
+    porcentaje_grasa: Optional[float] = None
+    masa_muscular_kg: Optional[float] = None
+    circunf_cintura_cm: Optional[float] = None
+    circunf_cadera_cm: Optional[float] = None
+    circunf_brazo_cm: Optional[float] = None
+    circunf_pierna_cm: Optional[float] = None
+    circunf_pecho_cm: Optional[float] = None
+    imc: Optional[float] = None
 
-# Campos que se pueden editar
+
+class MedicionComparativaResponse(BaseModel):
+    medicion_anterior: MedicionResponse
+    medicion_reciente: MedicionResponse
+    diferencias: DiferenciasMedicion
+
+
+# Topes superiores: son técnicos (capacidad de la columna), no reglas de negocio.
+# Las columnas son `NUMERIC(5,2)` (máx. 999.99), salvo `porcentaje_grasa` que es
+# `NUMERIC(4,2)` (máx. 99.99).
+_MAX_NUMERIC_5_2 = 999.99
+# RN-04 dice "0 a 100" inclusivo, pero la columna solo llega a 99.99. Se acota a
+# 99.99 como TAPÓN TEMPORAL para que ningún valor válido según el schema falle al
+# persistir (un 500). La solución definitiva es una migración que ensanche la
+# columna a NUMERIC(5,2); está pendiente de coordinar con el equipo. Ver
+# docs/api/api_02_mediciones.md (Limitaciones).
+_MAX_GRASA_COLUMNA = 99.99
+
+_Peso = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-03: peso > 0
+_Grasa = Annotated[float, Field(ge=0, le=_MAX_GRASA_COLUMNA)]  # RN-04 (acotado, ver arriba)
+_Positivo = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-05/RN-06: > 0
+
+
 class MedicionActualizar(BaseModel):
-    # Solo se cambian los campos que se envían
+    """Cuerpo de `PUT /mediciones/{id}`.
+
+    Actualización **parcial**: solo se cambian los campos presentes en el JSON;
+    los que se omiten quedan como estaban.
+
+    RN-37: no declara `usuario_id`. Con la configuración por defecto de Pydantic
+    (`extra="ignore"`) un `usuario_id` que llegue en el cuerpo se descarta en
+    silencio, sin reasignar la medición.
+
+    RN-03 a RN-06: los rangos se validan solo cuando el campo viene en la
+    petición. Un valor fuera de rango es un 422.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     fecha: date | None = None
@@ -133,28 +125,3 @@ class MedicionActualizar(BaseModel):
     circunf_brazo_cm: _Positivo | None = None
     circunf_pierna_cm: _Positivo | None = None
     circunf_pecho_cm: _Positivo | None = None
-
-    @field_validator(
-        "peso_kg",
-        "porcentaje_grasa",
-        "masa_muscular_kg",
-        "circunf_cintura_cm",
-        "circunf_cadera_cm",
-        "circunf_brazo_cm",
-        "circunf_pierna_cm",
-        "circunf_pecho_cm",
-        mode="before",
-    )
-    @classmethod
-    def _rechazar_booleanos(cls, valor):
-        if isinstance(valor, bool):
-            raise ValueError("Los campos numéricos no pueden ser booleanos")
-        return valor
-
-    # La fecha no puede ser posterior a hoy
-    @field_validator("fecha")
-    @classmethod
-    def _fecha_no_futura(cls, valor: date) -> date:
-        if valor > datetime.now(timezone.utc).date():
-            raise ValueError("La fecha de medición no puede ser futura")
-        return valor
