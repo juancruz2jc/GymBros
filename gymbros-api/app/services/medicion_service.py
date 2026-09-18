@@ -206,14 +206,17 @@ def comparar_mediciones(
             Medicion.usuario_id == usuario.id,
             Medicion.fecha == fecha1,
         )
-    ).scalar_one_or_none()
+        .order_by(desc(Medicion.creado_en))
+
+    ).first()
 
     med2 = db.execute(
         select(Medicion).where(
             Medicion.usuario_id == usuario.id,
             Medicion.fecha == fecha2,
         )
-    ).scalar_one_or_none()
+        .order_by(desc(Medicion.creado_en))
+    ).first()
 
     if not med1 or not med2:
         return None
