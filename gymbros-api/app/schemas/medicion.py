@@ -67,6 +67,23 @@ class MedicionCrear(BaseModel):
         description="Circunferencia de pecho"
     )
 
+    @field_validator(
+        "peso_kg",
+        "porcentaje_grasa",
+        "masa_muscular_kg",
+        "circunf_cintura_cm",
+        "circunf_cadera_cm",
+        "circunf_brazo_cm",
+        "circunf_pierna_cm",
+        "circunf_pecho_cm",
+        mode="before",
+    )
+    @classmethod
+    def _rechazar_booleanos(cls, valor):
+        if isinstance(valor, bool):
+            raise ValueError("Los campos numéricos no pueden ser booleanos")
+        return valor
+
 
 # Respuesta del IMC
 class IMCRespuesta(BaseModel):
@@ -117,6 +134,23 @@ class MedicionActualizar(BaseModel):
     circunf_pierna_cm: _Positivo | None = None
     circunf_pecho_cm: _Positivo | None = None
 
+    @field_validator(
+        "peso_kg",
+        "porcentaje_grasa",
+        "masa_muscular_kg",
+        "circunf_cintura_cm",
+        "circunf_cadera_cm",
+        "circunf_brazo_cm",
+        "circunf_pierna_cm",
+        "circunf_pecho_cm",
+        mode="before",
+    )
+    @classmethod
+    def _rechazar_booleanos(cls, valor):
+        if isinstance(valor, bool):
+            raise ValueError("Los campos numéricos no pueden ser booleanos")
+        return valor
+
     # La fecha no puede ser posterior a hoy
     @field_validator("fecha")
     @classmethod
@@ -124,3 +158,4 @@ class MedicionActualizar(BaseModel):
         if valor > datetime.now(timezone.utc).date():
             raise ValueError("La fecha de medición no puede ser futura")
         return valor
+    
