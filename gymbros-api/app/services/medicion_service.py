@@ -1,9 +1,10 @@
 """Servicio del módulo de mediciones corporales (RF-06, RF-07, RF-08, RF-10, RF-11)."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, desc, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,8 @@ from app.models.medicion import Medicion
 from app.models.usuario import Usuario
 from app.schemas.medicion import IMCRespuesta, MedicionActualizar, MedicionCrear, MedicionResponse
 
+# H-05: Zona horaria oficial para evitar desfases con UTC
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 _CAMPOS_OBLIGATORIOS = ("peso_kg", "fecha")
 
 
@@ -26,10 +29,17 @@ def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | Non
 
 # RF-06: Registrar medición vinculada al usuario autenticado
 def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> MedicionResponse:
-    fecha_actual = datetime.now(timezone.utc)
-    fecha_med = datos.fecha.replace(tzinfo=timezone.utc) if datos.fecha.tzinfo is None else datos.fecha
+    # H-05: Se calcula "hoy" basado en la hora local de Colombia (UTC-5)
+    ahora_co = datetime.now(ZONA_COLOMBIA)
 
-    if fecha_med > fecha_actual:
+    fecha_med = datos.fecha
+    if fecha_med.tzinfo is None:
+        fecha_med = fecha_med.replace(tzinfo=ZONA_COLOMBIA)
+    else:
+        fecha_med = fecha_med.astimezone(ZONA_COLOMBIA)
+
+    # RN-70: La fecha de medición no puede ser futura respecto al día local
+    if fecha_med.date() > ahora_co.date():
         raise ValueError("La fecha de medición no puede ser futura")
 
     nueva_medicion = Medicion(
@@ -90,7 +100,8 @@ def obtener_medicion(
 
 # RF-10: Detección de inactividad por umbral de 30 días
 def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
-    fecha_hoy = date.today()
+    # H-05: 'hoy' se evalúa con la fecha real de Colombia
+    fecha_hoy = datetime.now(ZONA_COLOMBIA).date()
 
     stmt = (
         select(Medicion)
