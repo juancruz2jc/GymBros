@@ -7,11 +7,11 @@ edición no puede reasignar la medición a otra persona (RN-37).
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Annotated, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------------------------------------------------------
@@ -78,9 +78,13 @@ _MAX_NUMERIC_5_2 = 999.99
 # docs/api/api_02_mediciones.md (Limitaciones).
 _MAX_GRASA_COLUMNA = 99.99
 
-_Peso = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-03: peso > 0
+# Mínimo representable en NUMERIC(5,2): gt=0 deja pasar valores como 0.001 que
+# la columna redondea a 0.00 al persistir, violando RN-03/RN-05/RN-06 (GYM-176).
+_MIN_NUMERIC_5_2 = 0.01
+
+_Peso = Annotated[float, Field(ge=_MIN_NUMERIC_5_2, le=_MAX_NUMERIC_5_2)]  # RN-03: peso > 0
 _Grasa = Annotated[float, Field(ge=0, le=_MAX_GRASA_COLUMNA)]  # RN-04 (acotado, ver arriba)
-_Positivo = Annotated[float, Field(gt=0, le=_MAX_NUMERIC_5_2)]  # RN-05/RN-06: > 0
+_Positivo = Annotated[float, Field(ge=_MIN_NUMERIC_5_2, le=_MAX_NUMERIC_5_2)]  # RN-05/RN-06: > 0
 
 
 class MedicionActualizar(BaseModel):
@@ -95,6 +99,9 @@ class MedicionActualizar(BaseModel):
 
     RN-03 a RN-06: los rangos se validan solo cuando el campo viene en la
     petición. Un valor fuera de rango es un 422.
+
+    RN-70: `fecha`, si viene en la petición, no puede ser posterior a la fecha
+    actual (mismo criterio que `crear_medicion`, ver `medicion_service.py`).
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -108,3 +115,11 @@ class MedicionActualizar(BaseModel):
     circunf_brazo_cm: _Positivo | None = None
     circunf_pierna_cm: _Positivo | None = None
     circunf_pecho_cm: _Positivo | None = None
+
+    @field_validator("fecha")
+    @classmethod
+    def _fecha_no_futura(cls, valor: date) -> date:
+        # RN-70: la fecha de medición no puede ser futura
+        if valor > datetime.now(timezone.utc).date():
+            raise ValueError("La fecha de medición no puede ser futura")
+        return valor
