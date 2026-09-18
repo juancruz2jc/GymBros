@@ -13,7 +13,6 @@ from app.models.medicion import Medicion
 from app.models.usuario import Usuario
 from app.schemas.medicion import (
     DiferenciasMedicion,
-    IMCRespuesta,
     MedicionActualizar,
     MedicionComparativaResponse,
     MedicionCrear,
@@ -205,14 +204,14 @@ def comparar_mediciones(
     med1 = db.execute(
         select(Medicion).where(
             Medicion.usuario_id == usuario.id,
-            func.date(Medicion.fecha) == fecha1,
+            Medicion.fecha == fecha1,
         )
     ).scalar_one_or_none()
 
     med2 = db.execute(
         select(Medicion).where(
             Medicion.usuario_id == usuario.id,
-            func.date(Medicion.fecha) == fecha2,
+            Medicion.fecha == fecha2,
         )
     ).scalar_one_or_none()
 
