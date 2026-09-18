@@ -1,39 +1,52 @@
 """Servicio del módulo de mediciones corporales (RF-06, RF-07, RF-08, RF-10, RF-11)."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, desc, select, func
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
 from app.models.usuario import Usuario
-from app.schemas.medicion import IMCRespuesta, MedicionActualizar, MedicionCrear, MedicionResponse, DiferenciasMedicion, MedicionComparativaResponse, IMCRespuesta
+from app.schemas.medicion import (
+    DiferenciasMedicion,
+    IMCRespuesta,
+    MedicionActualizar,
+    MedicionComparativaResponse,
+    MedicionCrear,
+    MedicionResponse,
+)
 
-
-# Columnas NOT NULL de `mediciones`: un `null` explícito en el cuerpo del PUT no
-# puede vaciarlas, así que se ignora.
+# H-05: Zona horaria oficial para evitar desfases con UTC
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 _CAMPOS_OBLIGATORIOS = ("peso_kg", "fecha")
 
 
 # RN-09 a RN-13: Cálculo global de IMC (RF-07)
 def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | None:
-    """IMC = peso_kg / (altura_m)^2 (RN-12), redondeado a 1 decimal."""
-    if not altura_cm or altura_cm <= 0:  # RN-09
+    if not altura_cm or altura_cm <= 0:
         return None
     altura_m = Decimal(altura_cm) / Decimal(100)
-    imc = Decimal(str(peso_kg)) / (altura_m * altura_m)  # RN-12
+    imc = Decimal(str(peso_kg)) / (altura_m * altura_m)
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
 
 # RF-06: Registrar medición vinculada al usuario autenticado
 def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> MedicionResponse:
-    fecha_actual = datetime.now(timezone.utc)
-    fecha_med = datos.fecha.replace(tzinfo=timezone.utc) if datos.fecha.tzinfo is None else datos.fecha
+    # H-05: Se calcula "hoy" basado en la hora local de Colombia (UTC-5)
+    ahora_co = datetime.now(ZONA_COLOMBIA)
 
-    # RN-70: La fecha de medición no puede ser futura
-    if fecha_med > fecha_actual:
+    fecha_med = datos.fecha
+    if fecha_med.tzinfo is None:
+        fecha_med = fecha_med.replace(tzinfo=ZONA_COLOMBIA)
+    else:
+        fecha_med = fecha_med.astimezone(ZONA_COLOMBIA)
+
+    # RN-70: La fecha de medición no puede ser futura respecto al día local
+    if fecha_med.date() > ahora_co.date():
         raise ValueError("La fecha de medición no puede ser futura")
 
     nueva_medicion = Medicion(
@@ -55,6 +68,7 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
 
     return _a_response(nueva_medicion, usuario.altura_cm)
 
+
 # RF-08: Historial y consulta de mediciones (GYM-79)
 def listar_mediciones(
     db: Session,
@@ -74,6 +88,7 @@ def listar_mediciones(
     filas = db.execute(consulta).scalars().all()
     return [_a_response(fila, usuario.altura_cm) for fila in filas]
 
+
 def obtener_medicion(
     db: Session,
     *,
@@ -89,11 +104,18 @@ def obtener_medicion(
         return None
     return _a_response(fila, usuario.altura_cm)
 
+
 # RF-10: Detección de inactividad por umbral de 30 días
 def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
+    # H-05: 'hoy' se evalúa con la fecha real de Colombia
+    fecha_hoy = datetime.now(ZONA_COLOMBIA).date()
+
     stmt = (
         select(Medicion)
-        .where(Medicion.usuario_id == usuario.id)
+        .where(
+            Medicion.usuario_id == usuario.id,
+            Medicion.fecha <= fecha_hoy
+        )
         .order_by(desc(Medicion.fecha))
         .limit(1)
     )
@@ -106,10 +128,14 @@ def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
             "esta_inactivo": False
         }
 
-    fecha_ahora = datetime.now(timezone.utc)
-    fecha_ult = ultima_medicion.fecha.replace(tzinfo=timezone.utc) if ultima_medicion.fecha.tzinfo is None else ultima_medicion.fecha
+    fecha_ult = (
+        ultima_medicion.fecha
+        if isinstance(ultima_medicion.fecha, date) and not isinstance(ultima_medicion.fecha, datetime)
+        else ultima_medicion.fecha.date()
+    )
 
-    dias_transcurridos = (fecha_ahora - fecha_ult).days
+    dias_transcurridos = max(0, (fecha_hoy - fecha_ult).days)
+
     return {
         "ultima_medicion": ultima_medicion.fecha,
         "dias_desde_ultima_medicion": dias_transcurridos,
@@ -124,18 +150,6 @@ def actualizar_medicion(
     medicion_id: UUID,
     datos: MedicionActualizar,
 ) -> MedicionResponse | None:
-    """Edita una medición del `usuario`. `None` si no es suya o no existe.
-
-    RN-08: `id` y `usuario_id` van juntos en el `WHERE`; una medición ajena no se
-    encuentra (el endpoint responde 404), sin un `if fila.usuario_id == ...`
-    posterior.
-
-    RN-37: nunca se escribe `usuario_id`. El schema `MedicionActualizar` ni lo
-    declara; aun así se descarta de forma explícita antes de aplicar los cambios.
-
-    Actualización parcial: solo se escriben los campos presentes en `datos`
-    (`exclude_unset`). Un `null` explícito sobre una columna NOT NULL se ignora.
-    """
     fila = db.execute(
         select(Medicion).where(
             Medicion.id == medicion_id,
@@ -146,7 +160,7 @@ def actualizar_medicion(
         return None
 
     cambios = datos.model_dump(exclude_unset=True)
-    cambios.pop("usuario_id", None)  # RN-37
+    cambios.pop("usuario_id", None)
     for campo, valor in cambios.items():
         if valor is None and campo in _CAMPOS_OBLIGATORIOS:
             continue
@@ -163,15 +177,6 @@ def eliminar_medicion(
     usuario: Usuario,
     medicion_id: UUID,
 ) -> bool:
-    """Borra definitivamente una medición del `usuario`. `True` si borró algo.
-
-    RN-36: el borrado es físico; no hay papelera ni columna de baja lógica en
-    este alcance.
-
-    RN-08: `id` y `usuario_id` van juntos en el `WHERE`. Una medición ajena no se
-    borra y la función devuelve `False` (el endpoint responde 404),
-    indistinguible de un id inexistente.
-    """
     resultado = db.execute(
         delete(Medicion).where(
             Medicion.id == medicion_id,
@@ -198,13 +203,17 @@ def comparar_mediciones(
 ) -> Optional[MedicionComparativaResponse]:
     # Consultar ambas mediciones para el usuario
     med1 = db.execute(
-        select(Medicion).where(Medicion.usuario_id == usuario.id, 
-        func.date(Medicion.fecha) == fecha1)
+        select(Medicion).where(
+            Medicion.usuario_id == usuario.id,
+            func.date(Medicion.fecha) == fecha1,
+        )
     ).scalar_one_or_none()
 
     med2 = db.execute(
-        select(Medicion).where(Medicion.usuario_id == usuario.id, 
-        func.date(Medicion.fecha) == fecha2)
+        select(Medicion).where(
+            Medicion.usuario_id == usuario.id,
+            func.date(Medicion.fecha) == fecha2,
+        )
     ).scalar_one_or_none()
 
     if not med1 or not med2:
