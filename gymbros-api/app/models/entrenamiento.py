@@ -1,6 +1,6 @@
 import uuid
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Text, ForeignKey, UniqueConstraint
 # pyrefly: ignore [missing-import]
 from sqlalchemy.dialects.postgresql import UUID
 # pyrefly: ignore [missing-import]
@@ -60,6 +60,12 @@ class Sesion(Base):
 
 class SerieSesion(Base):
     __tablename__ = "series_sesion"
+    __table_args__ = (
+        UniqueConstraint(
+            "sesion_id", "ejercicio_id", "numero_serie",
+            name="uq_sesion_ejercicio_numero",
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sesion_id = Column(UUID(as_uuid=True), ForeignKey("sesiones.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -67,4 +73,4 @@ class SerieSesion(Base):
     numero_serie = Column(Integer, nullable=False)
     repeticiones_realizadas = Column(Integer, nullable=False)
     peso_usado_kg = Column(Numeric(5, 2), nullable=False)
-    orden = Column(Integer, nullable=False)
+    orden = Column(Integer, nullable=False)
