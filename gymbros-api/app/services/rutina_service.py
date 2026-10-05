@@ -43,3 +43,38 @@ def eliminar_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) ->
     db.delete(rutina)
     db.commit()
     return True
+
+def duplicar_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> Rutina | None:
+    # 1. Buscar la rutina original (obtener_rutina ya valida que sea del usuario)
+    rutina_original = obtener_rutina(db, rutina_id, usuario_id)
+    if not rutina_original:
+        return None
+
+    # 2. Crear la copia
+    nueva_rutina = Rutina(
+        usuario_id=usuario_id,
+        nombre=f"{rutina_original.nombre} (copia)",
+        favorita=False
+    )
+    db.add(nueva_rutina)
+    db.flush() # Guarda temporalmente para obtener el nuevo ID
+
+    # 3. Copiar los ejercicios
+    ejercicios_originales = db.query(RutinaEjercicio).filter(
+        RutinaEjercicio.rutina_id == rutina_id
+    ).all()
+
+    for ej in ejercicios_originales:
+        nuevo_ejercicio = RutinaEjercicio(
+            rutina_id=nueva_rutina.id,
+            ejercicio_id=ej.ejercicio_id,
+            orden=ej.orden,
+            series_objetivo=ej.series_objetivo,
+            repeticiones_objetivo=ej.repeticiones_objetivo,
+            descanso_segundos=ej.descanso_segundos
+        )
+        db.add(nuevo_ejercicio)
+
+    db.commit()
+    db.refresh(nueva_rutina)
+    return nueva_rutina

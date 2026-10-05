@@ -5,6 +5,8 @@ from app.api.dependencies import get_db, get_current_user
 from app.schemas.rutina import RutinaCreate, RutinaResponse
 from app.services import rutina_service
 
+
+
 router = APIRouter(prefix="/rutinas", tags=["rutinas"])
 
 @router.post("", response_model=RutinaResponse, status_code=status.HTTP_201_CREATED)
@@ -38,3 +40,19 @@ def eliminar_rutina(
             detail="Rutina no encontrada o no tienes permisos"
         )
     return None
+
+@router.post("/{rutina_id}/duplicar", response_model=RutinaResponse, status_code=status.HTTP_201_CREATED)
+def endpoint_duplicar_rutina(
+    rutina_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    nueva_rutina = rutina_service.duplicar_rutina(db=db, rutina_id=rutina_id, usuario_id=current_user.id)
+    
+    if not nueva_rutina:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rutina no encontrada o no tienes permisos"
+        )
+        
+    return nueva_rutina
