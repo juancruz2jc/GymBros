@@ -23,11 +23,12 @@ GymBros/
 ## Arrancar el proyecto
 
 ```powershell
-docker compose up --build
+docker compose up --build                    # API contra la base compartida (Supabase)
+docker compose --profile local up --build    # API + PostgreSQL local
 ```
 
-Las instrucciones completas — incluido el modo con venv para quien no
-pueda usar Docker — están en el
+Las instrucciones completas — cómo configurar el `.env` para cada caso y el
+modo con venv para quien no pueda usar Docker — están en el
 [README del backend](gymbros-api/README.md).
 
 | Qué | URL |

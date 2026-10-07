@@ -34,27 +34,41 @@ problema silencioso.
 
 ### Modo A — Docker (recomendado)
 
-Desde la **raíz del monorepo**, no desde esta carpeta:
+Hay dos bases posibles. Elige una en el `.env` (deja activa una sola
+`DATABASE_URL`).
+
+**A1 — Base compartida (Supabase), la de todos los días.** Pon la contraseña
+de Supabase en la `DATABASE_URL` que viene activa en el `.env.example` y,
+desde la **raíz del monorepo**:
 
 ```powershell
 docker compose up --build
 ```
 
-El `--build` solo hace falta la primera vez o cuando cambie el
-`Dockerfile` o el `requirements.txt`. El resto de las veces:
+Solo arranca la API; la base es la del equipo. El `--build` hace falta la
+primera vez o cuando cambie el `Dockerfile` o el `requirements.txt`.
+
+**A2 — Base local, para pruebas destructivas o sin conexión.** Activa la
+`DATABASE_URL` con host `db` (el nombre del servicio de PostgreSQL dentro de la
+red de Docker) y levanta también el contenedor de Postgres:
 
 ```powershell
-docker compose up
+docker compose --profile local up --build
 ```
 
-Deja la `DATABASE_URL` como viene en el `.env.example` — el host es `db`,
-que es el nombre del servicio de PostgreSQL dentro de la red de Docker.
+Una base local recién creada está vacía: aplica las migraciones y el seed (ver
+*Comandos útiles* y *Datos de ejemplo*).
+
+> **No corras pruebas que creen o borren datos contra Supabase.** Todo el
+> equipo trabaja sobre esa base. Para eso está A2.
 
 ---
 
 ### Modo B — Local con venv
 
-Necesitas **PostgreSQL 16** instalado y una base llamada `gymbros`.
+Puedes usar la base compartida (Supabase) con la `DATABASE_URL` que viene
+activa, o una local: en ese caso necesitas **PostgreSQL 16** instalado, una
+base llamada `gymbros` y activar la `DATABASE_URL` de `localhost`.
 
 ```powershell
 cd gymbros-api
@@ -62,9 +76,6 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
-
-En tu `.env`, comenta la `DATABASE_URL` de Docker y descomenta la de
-`localhost`.
 
 Para arrancar:
 
@@ -95,16 +106,30 @@ genera solo a partir de las anotaciones de tipos del código.
 
 | Qué quieres | Comando |
 |---|---|
-| Levantar | `docker compose up` |
-| Apagar | `docker compose down` |
-| Borrar la base y empezar limpio | `docker compose down -v` |
+| Levantar (Supabase) | `docker compose up` |
+| Levantar (base local) | `docker compose --profile local up` |
+| Apagar | `docker compose --profile local down` |
+| Borrar la base **local** y empezar limpio | `docker compose --profile local down -v` |
 | Ver los logs de la API | `docker compose logs -f api` |
-| Terminal dentro del contenedor | `docker compose exec api bash` |
-| Consola de PostgreSQL | `docker compose exec db psql -U gymbros -d gymbros` |
+| Terminal dentro del contenedor | `docker compose exec api sh` (la imagen es Alpine: no trae `bash`) |
+| Consola de PostgreSQL local | `docker compose exec db psql -U gymbros -d gymbros` |
+| Ver en qué migración está la base | `docker compose exec api alembic current` |
 | Aplicar migraciones | `docker compose exec api alembic upgrade head` |
 
 Los cambios en archivos `.py` se recargan solos: el código está montado
 como volumen y uvicorn corre con `--reload`.
+
+### Migraciones en la base compartida
+
+En Supabase la base es una sola para todo el equipo, así que una migración
+aplicada allí la ve todo el mundo:
+
+- Antes de migrar, revisa en qué revisión está: `alembic current`.
+- **Solo se aplican en Supabase migraciones que ya están en `dev`.** Una
+  migración de una rama sin mergear deja la base adelantada respecto al código
+  de los demás, y su `alembic upgrade` falla o, peor, el esquema no coincide
+  con sus modelos.
+- Las migraciones de una rama se prueban primero en la base local (A2).
 
 ---
 

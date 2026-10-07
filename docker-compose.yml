@@ -1,6 +1,11 @@
 services:
+  # PostgreSQL local, solo con `docker compose --profile local up`. Por defecto
+  # la API usa la base compartida de Supabase y este contenedor no arranca.
+  # Sirve para pruebas destructivas o para trabajar sin conexión.
   db:
+    profiles: ["local"]
     image: postgres:16-alpine
+    # Credenciales de desarrollo local: la base solo existe en tu máquina.
     environment:
       POSTGRES_USER: gymbros
       POSTGRES_PASSWORD: gymbros
@@ -10,7 +15,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gymbros"]
+      test: ["CMD-SHELL", "pg_isready -U gymbros -d gymbros"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,9 +27,12 @@ services:
       - "8001:8000"
     volumes:
       - ./gymbros-api:/code
+    # `required: false`: con Supabase el servicio `db` no está activo y la API
+    # arranca sola; con `--profile local` espera a que Postgres esté listo.
     depends_on:
       db:
         condition: service_healthy
+        required: false
 
 volumes:
   pgdata:
