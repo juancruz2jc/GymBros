@@ -1,14 +1,16 @@
 # GymBros API
 
-Backend de GymBros: FastAPI + PostgreSQL.
+Backend de GymBros: FastAPI + PostgreSQL. La base de datos es **una sola,
+compartida por todo el equipo, en Supabase**: nadie levanta un PostgreSQL
+propio.
 
 ---
 
 ## Levantar el proyecto
 
-Hay dos modos. **Docker es el recomendado** — te da Python y PostgreSQL con
-la versión correcta sin instalar nada. El modo local existe para quien no
-pueda usar Docker.
+Hay dos modos. **Docker es el recomendado** — te da Python con la versión
+correcta sin instalar nada. El modo venv existe para quien no pueda usar
+Docker. Los dos se conectan a la misma base de Supabase.
 
 ### Paso común: crear tu `.env`
 
@@ -19,7 +21,13 @@ crea el suyo a partir de la plantilla:
 Copy-Item .env.example .env
 ```
 
-Genera un secreto real y pégalo en `JWT_SECRET`:
+En tu `.env`:
+
+1. En `DATABASE_URL`, reemplaza `[CONTRASEÑA_DE_SUPABASE]` por la contraseña
+   de la base (pídela al equipo; **nunca** la subas al repo ni la pegues en el
+   chat). Si tiene caracteres especiales, codifícalos como indica el
+   `.env.example`.
+2. Genera un secreto real y pégalo en `JWT_SECRET`:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -47,14 +55,9 @@ El `--build` solo hace falta la primera vez o cuando cambie el
 docker compose up
 ```
 
-Deja la `DATABASE_URL` como viene en el `.env.example` — el host es `db`,
-que es el nombre del servicio de PostgreSQL dentro de la red de Docker.
-
 ---
 
 ### Modo B — Local con venv
-
-Necesitas **PostgreSQL 16** instalado y una base llamada `gymbros`.
 
 ```powershell
 cd gymbros-api
@@ -63,13 +66,10 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-En tu `.env`, comenta la `DATABASE_URL` de Docker y descomenta la de
-`localhost`.
-
 Para arrancar:
 
 ```powershell
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
 ---
@@ -82,8 +82,8 @@ uvicorn app.main:app --reload
 | Swagger (documentación y pruebas) | http://localhost:8001/docs |
 
 > El puerto es **8001**, no 8000. Se cambió porque el 8000 suele estar
-> ocupado por otros proyectos. En modo local con venv, uvicorn usa el
-> 8000 salvo que le pases `--port 8001`.
+> ocupado por otros proyectos. Si en Windows `localhost` corta la conexión,
+> usa `127.0.0.1:8001` (Docker Desktop a veces falla por IPv6).
 
 `/docs` es el banco de pruebas del sprint: lista todos los endpoints y
 permite ejecutarlos desde el navegador. No hay que configurarlo — se
@@ -97,14 +97,27 @@ genera solo a partir de las anotaciones de tipos del código.
 |---|---|
 | Levantar | `docker compose up` |
 | Apagar | `docker compose down` |
-| Borrar la base y empezar limpio | `docker compose down -v` |
 | Ver los logs de la API | `docker compose logs -f api` |
-| Terminal dentro del contenedor | `docker compose exec api bash` |
-| Consola de PostgreSQL | `docker compose exec db psql -U gymbros -d gymbros` |
-| Aplicar migraciones | `docker compose exec api alembic upgrade head` |
+| Terminal dentro del contenedor | `docker compose exec api sh` (la imagen es Alpine: no trae `bash`) |
+| Ver en qué migración está la base | `docker compose exec api alembic current` |
+| Aplicar migraciones | `docker compose exec api alembic upgrade head` (ver reglas abajo) |
 
 Los cambios en archivos `.py` se recargan solos: el código está montado
 como volumen y uvicorn corre con `--reload`.
+
+### Reglas de la base compartida
+
+Todo el equipo trabaja sobre la misma base, así que lo que hace uno lo ven
+todos:
+
+- **Solo se aplican migraciones que ya están en `dev`.** Una migración de una
+  rama sin mergear deja la base adelantada respecto al código de los demás:
+  su `alembic current` y `alembic upgrade` fallan con
+  `Can't locate revision` y el esquema deja de coincidir con sus modelos.
+- Antes de migrar, revisa en qué revisión está: `alembic current`. Avisa al
+  grupo antes de aplicar una migración.
+- No borres datos que no creaste tú. Los datos de prueba se crean con
+  correos que se reconozcan como tuyos (p. ej. `juan+prueba1@...`).
 
 ---
 
@@ -120,7 +133,8 @@ entre 10 grupos musculares, 6 equipos y 5 categorías) para poder probar los fil
 `GET /api/v1/ejercicios`. Incluye a propósito dos ejercicios con
 `activo = false` para verificar que el catálogo público los oculta (RN-39).
 Es **idempotente**: identifica cada fila por `nombre_en` y solo inserta lo que
-falta, así que se puede repetir sin duplicar.
+falta, así que se puede repetir sin duplicar. **En Supabase ya está cargado**:
+solo hace falta volver a correrlo si se agregan ejercicios al script.
 
 ```powershell
 # Con Docker, desde la raíz del monorepo

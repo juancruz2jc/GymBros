@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_DIAS: int = 30
     RECUPERACION_TOKEN_MINUTOS: int = 60  # RN-27
 
+    # Pool de conexiones por instancia de la API. El pooler de Supabase tiene
+    # un tope bajo de conexiones compartido por todo el equipo; con los
+    # valores por defecto de SQLAlchemy (5 + 10) unas pocas instancias lo
+    # agotan.
+    DB_POOL_SIZE: int = 3
+    DB_MAX_OVERFLOW: int = 2
+
     @field_validator("JWT_SECRET")
     @classmethod
     def _rechazar_secreto_de_ejemplo(cls, valor: str) -> str:
