@@ -110,7 +110,7 @@ def historial_mediciones(
     response_model=MedicionComparativaResponse,
     summary="Comparar dos mediciones por fecha",
     responses={
-        404: {"description": "No se encontraron registros en una o ambas fechas"},
+        404: {"description": "Una o ambas fechas no tienen medición; el detalle dice cuáles (RN-35)"},
         400: {"description": "Las fechas deben ser distintas"},
     },
 )
@@ -127,16 +127,19 @@ def comparar_mediciones(
             detail="Debes ingresar dos fechas distintas para realizar la comparación.",
         )
 
-    resultado = medicion_service.comparar_mediciones(
-        db, usuario=usuario, fecha1=fecha1, fecha2=fecha2
-    )
-    if resultado is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontró registro de medición para una o ambas fechas indicadas.",
+    try:
+        return medicion_service.comparar_mediciones(
+            db, usuario=usuario, fecha1=fecha1, fecha2=fecha2
         )
-    return resultado
-    
+    except medicion_service.FechasSinMedicionError as e:
+        # RN-35: decir explícitamente qué fecha no tiene medición.
+        if len(e.fechas) == 1:
+            detalle = f"No tienes una medición registrada el {e.fechas[0]}."
+        else:
+            detalle = f"No tienes mediciones registradas el {e.fechas[0]} ni el {e.fechas[1]}."
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detalle)
+
+
 # ---------------------------------------------------------
 # RF-08: Detalle de una medición
 # ---------------------------------------------------------

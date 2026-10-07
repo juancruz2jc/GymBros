@@ -65,6 +65,7 @@ medición por fecha (BD-04), así que no hace falta desempate.
     "fecha": "2025-01-10",
     "peso_kg": 80.0,
     "imc": 27.7,
+    "categoria_imc": "sobrepeso",
     "porcentaje_grasa": null,
     "masa_muscular_kg": null,
     "circunf_cintura_cm": null,
@@ -83,6 +84,7 @@ medición por fecha (BD-04), así que no hace falta desempate.
 | `fecha` | Fecha a la que corresponde la medición (la que el usuario declara). |
 | `peso_kg` | Peso en kg. Número JSON, no string. |
 | `imc` | **Calculado** (RN-12): `peso_kg / (altura_m)²` redondeado a 1 decimal, usando la **altura vigente del usuario** (`usuarios.altura_cm`), no la de la fecha de la medición (RN-30). `null` si el usuario no tiene altura registrada (RN-09). |
+| `categoria_imc` | **Calculado** (RF-07, RN-13), clasificación OMS sobre el `imc` ya redondeado: `bajo_peso` (< 18.5), `normal` (18.5–24.9), `sobrepeso` (25.0–29.9), `obesidad` (≥ 30.0). `null` cuando `imc` es `null`. |
 | `porcentaje_grasa`, `masa_muscular_kg`, `circunf_*_cm` | Campos opcionales de la medición; `null` si no se registraron. |
 | `creado_en` | Marca de tiempo (UTC) de cuando se registró la fila. Puede ser muy posterior a `fecha` (RN-34). |
 
@@ -281,6 +283,18 @@ entre varias del mismo día.
   `medicion_service._guardar` traduce solo esa restricción a
   `MedicionDuplicadaError`; cualquier otro error de integridad se relanza.
 
+## `GET /api/v1/mediciones/comparar` (RF-09)
+
+Compara la medición de `fecha1` con la de `fecha2` (query, `YYYY-MM-DD`) y
+devuelve `medicion_anterior`, `medicion_reciente` y `diferencias`
+(reciente − anterior), sin importar en qué orden lleguen las fechas.
+
+| Código | Cuándo | Cuerpo |
+|---|---|---|
+| `200 OK` | Las dos fechas tienen medición. | `MedicionComparativaResponse` |
+| `400 Bad Request` | `fecha1 == fecha2`. | `{ "detail": "Debes ingresar dos fechas distintas..." }` |
+| `404 Not Found` | Una o ambas fechas no tienen medición. **El detalle dice cuál** (RN-35). | `{ "detail": "No tienes una medición registrada el 2026-09-07." }` o `{ "detail": "No tienes mediciones registradas el 2026-09-07 ni el 2026-08-01." }` |
+
 ## Reglas de negocio aplicadas
 
 | Regla | Exige | Dónde |
@@ -307,9 +321,9 @@ Lo implementado se ajusta a RN-12 y RN-30 (que sí se confirmaron). Queda por
 confirmar contra el texto oficial:
 
 - **RN-09/10/11**: se asume "sin altura → `imc: null`" y redondeo a 1 decimal.
-- **RN-13 (clasificación OMS**: bajo peso / normal / sobrepeso / obesidad**)**:
-  **no** se incluye en la respuesta. Si RF-08 la necesita, se añade como campo
-  `categoria_imc` calculado junto a `imc`.
+- **RN-13 (clasificación OMS)**: implementada como `categoria_imc`
+  (`medicion_service.clasificar_imc`). Se clasifica el IMC **redondeado**, el
+  mismo que ve el usuario: `24.95` se muestra `25.0` y sale `sobrepeso`.
 
 ---
 
