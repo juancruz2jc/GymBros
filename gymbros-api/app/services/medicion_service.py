@@ -33,6 +33,15 @@ class MedicionDuplicadaError(Exception):
     El endpoint la traduce a HTTP 409."""
 
 
+class FechasSinMedicionError(Exception):
+    """RN-35: alguna de las fechas a comparar no tiene medición. Lleva cuáles,
+    para que el endpoint lo diga explícitamente (404)."""
+
+    def __init__(self, fechas: list[date]) -> None:
+        super().__init__(fechas)
+        self.fechas = fechas
+
+
 def _guardar(db: Session, medicion: Medicion) -> None:
     """Commit que traduce la violación de "una medición por día" a
     `MedicionDuplicadaError`.
@@ -59,6 +68,21 @@ def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | Non
     altura_m = Decimal(altura_cm) / Decimal(100)
     imc = Decimal(str(peso_kg)) / (altura_m * altura_m)
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+# RN-13: clasificación OMS. Se aplica sobre el IMC ya redondeado a 1 decimal,
+# el mismo que ve el usuario: un 24.95 se muestra como 25.0 y debe salir
+# `sobrepeso`, no `normal`.
+def clasificar_imc(imc: float | None) -> str | None:
+    if imc is None:
+        return None
+    if imc < 18.5:
+        return "bajo_peso"
+    if imc < 25.0:
+        return "normal"
+    if imc < 30.0:
+        return "sobrepeso"
+    return "obesidad"
 
 
 # RF-06: Registrar medición vinculada al usuario autenticado
@@ -218,6 +242,7 @@ def eliminar_medicion(
 def _a_response(medicion: Medicion, altura_cm: int | None) -> MedicionResponse:
     respuesta = MedicionResponse.model_validate(medicion)
     respuesta.imc = calcular_imc(medicion.peso_kg, altura_cm)
+    respuesta.categoria_imc = clasificar_imc(respuesta.imc)
     return respuesta
 
 
@@ -228,7 +253,8 @@ def comparar_mediciones(
     usuario: Usuario,
     fecha1: date,
     fecha2: date,
-) -> Optional[MedicionComparativaResponse]:
+) -> MedicionComparativaResponse:
+    """Raises: FechasSinMedicionError si una o ambas fechas no tienen medición."""
     # BD-04: a lo sumo una medición por usuario y fecha.
     def _de_fecha(fecha: date) -> Medicion | None:
         return db.execute(
@@ -241,8 +267,9 @@ def comparar_mediciones(
     med1 = _de_fecha(fecha1)
     med2 = _de_fecha(fecha2)
 
-    if not med1 or not med2:
-        return None
+    faltantes = [f for f, m in ((fecha1, med1), (fecha2, med2)) if m is None]
+    if faltantes:
+        raise FechasSinMedicionError(faltantes)
 
     # Ordenar cronológicamente para que la resta sea (reciente - anterior)
     if med1.fecha <= med2.fecha:

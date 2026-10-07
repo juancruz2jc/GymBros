@@ -72,11 +72,6 @@ class MedicionCrear(BaseModel):
 # ---------------------------------------------------------
 # Estructuras de Salida (RF-07, RF-08, RF-10)
 # ---------------------------------------------------------
-class IMCRespuesta(BaseModel):
-    valor: float
-    categoria: str
-
-
 class MedicionResponse(BaseModel):
     """Respuesta unificada para registro, historial y detalle de mediciones."""
 
@@ -96,6 +91,8 @@ class MedicionResponse(BaseModel):
     circunf_pecho_cm: Optional[float] = None
 
     imc: Optional[float] = None
+    # RN-13: `bajo_peso`, `normal`, `sobrepeso` u `obesidad`; null si no hay IMC.
+    categoria_imc: Optional[str] = None
     creado_en: datetime
 
 
