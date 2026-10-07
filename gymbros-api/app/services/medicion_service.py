@@ -6,7 +6,8 @@ from typing import List, Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
@@ -22,6 +23,33 @@ from app.schemas.medicion import (
 # H-05: Zona horaria oficial para evitar desfases con UTC
 ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 _CAMPOS_OBLIGATORIOS = ("peso_kg", "fecha")
+
+# BD-04: restricción única (usuario_id, fecha) en `mediciones`.
+_UQ_MEDICION_POR_DIA = "uq_usuario_fecha_medicion"
+
+
+class MedicionDuplicadaError(Exception):
+    """Ya hay una medición del usuario en esa fecha (BD-04: una por día).
+    El endpoint la traduce a HTTP 409."""
+
+
+def _guardar(db: Session, medicion: Medicion) -> None:
+    """Commit que traduce la violación de "una medición por día" a
+    `MedicionDuplicadaError`.
+
+    Se resuelve intentando el INSERT/UPDATE y capturando el error de la
+    restricción, no consultando antes: dos peticiones simultáneas pasarían las
+    dos la consulta. Cualquier otro `IntegrityError` se relanza tal cual.
+    """
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        restriccion = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if restriccion == _UQ_MEDICION_POR_DIA:
+            raise MedicionDuplicadaError from exc
+        raise
+    db.refresh(medicion)
 
 
 # RN-09 a RN-13: Cálculo global de IMC (RF-07)
@@ -50,7 +78,9 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
 
     nueva_medicion = Medicion(
         usuario_id=usuario.id,
-        fecha=datos.fecha,
+        # El día que cuenta (RN-70 y una medición por día) es el de Colombia,
+        # no el que traiga el datetime en otra zona horaria.
+        fecha=fecha_med.date(),
         peso_kg=datos.peso_kg,
         porcentaje_grasa=datos.porcentaje_grasa,
         masa_muscular_kg=datos.masa_muscular_kg,
@@ -62,8 +92,7 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
     )
 
     db.add(nueva_medicion)
-    db.commit()
-    db.refresh(nueva_medicion)
+    _guardar(db, nueva_medicion)
 
     return _a_response(nueva_medicion, usuario.altura_cm)
 
@@ -165,8 +194,8 @@ def actualizar_medicion(
             continue
         setattr(fila, campo, valor)
 
-    db.commit()
-    db.refresh(fila)
+    # Cambiar la fecha a un día que ya tiene medición choca con BD-04.
+    _guardar(db, fila)
     return _a_response(fila, usuario.altura_cm)
 
 
@@ -200,23 +229,17 @@ def comparar_mediciones(
     fecha1: date,
     fecha2: date,
 ) -> Optional[MedicionComparativaResponse]:
-    # Consultar ambas mediciones para el usuario
-    med1 = db.execute(
-        select(Medicion).where(
-            Medicion.usuario_id == usuario.id,
-            Medicion.fecha == fecha1,
-        )
-        .order_by(desc(Medicion.creado_en))
+    # BD-04: a lo sumo una medición por usuario y fecha.
+    def _de_fecha(fecha: date) -> Medicion | None:
+        return db.execute(
+            select(Medicion).where(
+                Medicion.usuario_id == usuario.id,
+                Medicion.fecha == fecha,
+            )
+        ).scalar_one_or_none()
 
-    ).first()
-
-    med2 = db.execute(
-        select(Medicion).where(
-            Medicion.usuario_id == usuario.id,
-            Medicion.fecha == fecha2,
-        )
-        .order_by(desc(Medicion.creado_en))
-    ).first()
+    med1 = _de_fecha(fecha1)
+    med2 = _de_fecha(fecha2)
 
     if not med1 or not med2:
         return None
