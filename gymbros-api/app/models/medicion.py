@@ -1,6 +1,6 @@
 import uuid
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, Date, DateTime, Numeric, ForeignKey
+from sqlalchemy import Column, Date, DateTime, Numeric, ForeignKey, UniqueConstraint
 # pyrefly: ignore [missing-import]
 from sqlalchemy.dialects.postgresql import UUID
 # pyrefly: ignore [missing-import]
@@ -24,3 +24,7 @@ class Medicion(Base):
     circunf_pecho_cm = Column(Numeric(5, 2), nullable=True)
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('usuario_id', 'fecha', name='uq_usuario_fecha_medicion'),
+    )

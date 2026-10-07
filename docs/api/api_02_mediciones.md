@@ -55,8 +55,8 @@ siempre el del token (RF-08).
 
 #### `200 OK` — lista de mediciones (`list[MedicionResponse]`)
 
-Orden: por `fecha` de la medición **ascendente** (RN-34), con `creado_en` como
-desempate estable cuando dos mediciones comparten fecha.
+Orden: por `fecha` de la medición **ascendente** (RN-34). Hay a lo sumo una
+medición por fecha (BD-04), así que no hace falta desempate.
 
 ```json
 [
@@ -201,6 +201,7 @@ cambian solo los campos presentes en el cuerpo; los omitidos quedan como estaban
 | `200 OK` | Editada. | `MedicionResponse` con los valores nuevos y el `imc` recalculado. |
 | `401 Unauthorized` | Sin token válido. | `{ "detail": "No autenticado." }` |
 | `404 Not Found` | El id no existe **o** es de otro usuario (RN-08). | `{ "detail": "Medición no encontrada." }` |
+| `409 Conflict` | Se cambió `fecha` a un día que ya tiene otra medición del usuario (BD-04). | `{ "detail": "Ya registraste una medición en esa fecha. Edítala en lugar de crear otra." }` |
 | `422 Unprocessable Entity` | Algún valor fuera de rango (RN-03 a RN-06), o `medicion_id` no es un UUID. | error de validación de FastAPI |
 
 ```bash
@@ -259,6 +260,26 @@ curl -i -X DELETE http://localhost:8001/api/v1/mediciones/8f14e45f-cea1-4c0b-9f6
 ```
 
 ---
+
+## Una medición por día (BD-04)
+
+Cada usuario tiene **a lo sumo una medición por fecha**: restricción única
+`uq_usuario_fecha_medicion (usuario_id, fecha)` en la base (migración
+`ce4773f63c25`). Decisión del equipo (opción A): el seguimiento corporal es
+diario como mucho, y así historial, comparar y gráficas no tienen que elegir
+entre varias del mismo día.
+
+- `POST /mediciones` en una fecha que ya tiene medición → **`409`**. Para
+  corregirla se edita con `PUT`.
+- `PUT /mediciones/{id}` que cambia `fecha` a un día ocupado → **`409`**.
+- El día que cuenta es el de **Colombia** (`America/Bogota`): un `POST` con
+  `fecha = 2026-10-08T02:00:00Z` se guarda como `2026-10-07` (21:00 en
+  Bogotá). Antes se validaba RN-70 con la fecha de Bogotá pero se guardaba la
+  del datetime original.
+- Se detecta capturando el error de la restricción al hacer `commit` (no
+  consultando antes), así dos peticiones simultáneas no pasan las dos.
+  `medicion_service._guardar` traduce solo esa restricción a
+  `MedicionDuplicadaError`; cualquier otro error de integridad se relanza.
 
 ## Reglas de negocio aplicadas
 
