@@ -1,8 +1,8 @@
 # API · Sesiones de entrenamiento
 
-Estado: **RF-15 (iniciar)** · **RF-17 (finalizar)** · **RN-68 (descartar /
-reanudar)** · **RF-18 (calificar)** implementados. RF-16 (registrar series):
-pendiente de integrar (rama de GYM-16).
+Estado: **RF-15 (iniciar)** · **RF-16 (registrar series, GYM-16)** ·
+**RF-17 (finalizar)** · **RN-68 (descartar / reanudar)** · **RF-18 (calificar)**
+implementados.
 Base URL local: `http://localhost:8001` · Prefijo: `/api/v1` · Todos los
 endpoints requieren `Authorization: Bearer <access_token>`.
 
@@ -11,7 +11,7 @@ endpoints requieren `Authorization: Bearer <access_token>`.
 ## Ciclo de vida de una sesión
 
 ```
-POST /sesiones ──► ACTIVA ──► POST /sesiones/{id}/finalizar ──► FINALIZADA ──► PATCH /sesiones/{id}/calificacion
+POST /sesiones ──► ACTIVA ──(POST /sesiones/{id}/series)──► POST /sesiones/{id}/finalizar ──► FINALIZADA ──► PATCH /sesiones/{id}/calificacion
                      │                                                          (opcional, RN-48)
                      └──► DELETE /sesiones/{id}  (descartar, RN-68)
 ```
@@ -75,6 +75,42 @@ clave también terminan en la misma sesión (la restricción única de
 
 ---
 
+## `POST /api/v1/sesiones/{sesion_id}/series` — registrar series (RF-16)
+
+Registra una serie o un lote en una sesión **activa**. Pensado para la app
+online (serie por serie) y offline (lote al recuperar conexión, RNF-02).
+
+### Cuerpo (`SeriesPayload`)
+
+`{ "series": {…} }` (una) o `{ "series": [{…}, {…}] }` (lote, mínimo 1). Cada
+serie (`SerieCrear`):
+
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `ejercicio_id` | UUID | Debe existir en el catálogo. Uno **desactivado** sí vale (RN-39). |
+| `numero_serie` | int | ≥ 1. Número de la serie dentro del ejercicio. |
+| `repeticiones_realizadas` | int | **≥ 0**: `0` es una serie fallida, no un error (RN-45). |
+| `peso_usado_kg` | number | 0 a 999.99 (`0` vale: peso corporal o fallida, RN-45). |
+| `orden` | int | ≥ 1. Posición en la sesión. |
+
+Se rechazan booleanos en los campos numéricos (`true` no se convierte en `1`).
+
+**Idempotente (upsert):** la clave natural es `(sesion_id, ejercicio_id,
+numero_serie)` (restricción única de BD-04). Reenviar una serie que ya existe
+**la actualiza** en vez de duplicarla: sirve para reintentos offline y para
+corregir una serie mal registrada.
+
+### Respuestas
+
+| Código | Cuándo |
+|---|---|
+| `201 Created` | `list[SerieResponse]`: las series creadas o actualizadas. |
+| `404 Not Found` | La sesión no existe o es de otro usuario, **o** algún `ejercicio_id` no existe en el catálogo. |
+| `409 Conflict` | La sesión ya está finalizada (RN-46). |
+| `422` | Datos inválidos, lote vacío, o **la misma serie dos veces en el mismo lote** (sería ambiguo cuál vale). |
+
+---
+
 ## `POST /api/v1/sesiones/{sesion_id}/finalizar` — finalizar (RF-17)
 
 ### Cuerpo (`SesionFinalizar`) — opcional, se puede enviar vacío
@@ -131,6 +167,8 @@ reemplaza. Calificar es opcional (RN-48).
 
 | Regla | Dónde |
 |---|---|
+| RN-45 · 0 reps / 0 kg son válidos | `SerieCrear` (`ge=0`) |
+| RN-46 · series solo en sesión activa | `serie_service.registrar_series` → 409 |
 | RN-44 · una sola sesión activa | `sesion_service.iniciar_sesion` → `SesionActivaExistenteError` → 409 |
 | RN-47 · duración automática, no se finaliza dos veces | `finalizar_sesion` |
 | RN-48 · calificación opcional | `PATCH …/calificacion` aparte del cierre |
@@ -154,7 +192,27 @@ reemplaza. Calificar es opcional (RN-48).
 
 Ejecutados contra Supabase el 2026-10-07 con dos usuarios de prueba (borrados
 al final). Rutina y series insertadas directo en la base porque rutinas
-(GYM-149) y series (GYM-16) aún no están en `dev`. **Los 25 pasan.**
+(GYM-149) y series (GYM-16) aún no estaban en `dev`. **Los 25 pasan.**
+
+### RF-16 — series
+
+Ejecutados contra Supabase el 2026-10-08 con dos usuarios de prueba (borrados
+al final). **Los 11 pasan.** Los casos 5–7 fallaban en la versión original de
+GYM-16 y se corrigieron al integrarla.
+
+| # | Caso | Esperado |
+|---|---|---|
+| 1 | Una serie como objeto | `201`, lista de 1 |
+| 2 | Lote de 2 | `201`, lista de 2 |
+| 3 | Reenviar la misma serie con otros valores | `201`, actualizada |
+| 4 | (tras el 3) series en la sesión | 3, no se duplicó |
+| 5 | Serie fallida: 0 reps, 0 kg (RN-45) | `201` (antes `422`) |
+| 6 | `ejercicio_id` inexistente | `404` (antes `500`) |
+| 7 | Lote con la misma serie repetida | `422` (antes `500`) |
+| 8 | Booleano en `repeticiones_realizadas` | `422` |
+| 9 | Lote vacío | `422` |
+| 10 | Usuario B registra en la sesión de A | `404` |
+| 11 | Registrar en sesión finalizada (RN-46) | `409` |
 
 | # | Caso | Esperado |
 |---|---|---|
