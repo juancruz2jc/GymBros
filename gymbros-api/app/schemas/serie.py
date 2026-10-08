@@ -57,8 +57,9 @@ class SerieCrear(BaseModel):
     numero_serie: int = Field(
         ..., gt=0, description="Número de la serie dentro del ejercicio (≥ 1)"
     )
+    # RN-45: 0 es válido (serie fallida / no completada), no un error.
     repeticiones_realizadas: int = Field(
-        ..., gt=0, description="Cantidad de repeticiones realizadas (> 0)"
+        ..., ge=0, description="Cantidad de repeticiones realizadas (≥ 0; 0 = serie fallida)"
     )
     peso_usado_kg: float = Field(
         ...,
@@ -136,3 +137,16 @@ class SeriesPayload(BaseModel):
         if isinstance(v, dict):
             return [v]
         return v
+
+    @field_validator("series")
+    @classmethod
+    def _sin_series_repetidas(cls, series: list[SerieCrear]) -> list[SerieCrear]:
+        """La misma `(ejercicio_id, numero_serie)` dos veces en un lote es
+        ambigua (¿cuál vale?) y además chocaba con la restricción única al
+        guardar (500). Se rechaza con 422."""
+        claves = [(s.ejercicio_id, s.numero_serie) for s in series]
+        if len(claves) != len(set(claves)):
+            raise ValueError(
+                "El lote repite la misma serie (ejercicio_id y numero_serie)."
+            )
+        return series

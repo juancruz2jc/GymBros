@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.entrenamiento import Sesion, SerieSesion
+from app.models.entrenamiento import Ejercicio, Sesion, SerieSesion
 from app.models.usuario import Usuario
 from app.schemas.serie import SerieCrear, SerieResponse
 
@@ -20,6 +20,10 @@ from app.schemas.serie import SerieCrear, SerieResponse
 # ---------------------------------------------------------
 class SesionNoEncontrada(Exception):
     """La sesión no existe o no pertenece al usuario autenticado."""
+
+
+class EjercicioNoEncontrado(Exception):
+    """Algún `ejercicio_id` del lote no existe en el catálogo."""
 
 
 class SesionFinalizada(Exception):
@@ -62,6 +66,7 @@ def registrar_series(
     Raises:
         SesionNoEncontrada: La sesión no existe o pertenece a otro usuario.
         SesionFinalizada: La sesión ya está finalizada.
+        EjercicioNoEncontrado: Algún ``ejercicio_id`` no existe.
     """
     # 1. Buscar la sesión filtrando por usuario autenticado
     sesion = db.execute(
@@ -79,6 +84,15 @@ def registrar_series(
     # 2. Verificar que la sesión no esté finalizada
     if sesion.finalizada_en is not None:
         raise SesionFinalizada("La sesión ya se encuentra finalizada.")
+
+    # Los ejercicios deben existir; si no, la FK revienta al guardar (500).
+    # Uno desactivado sí vale: RN-39 lo mantiene válido en sesiones.
+    pedidos = {dato.ejercicio_id for dato in series}
+    existentes = set(
+        db.execute(select(Ejercicio.id).where(Ejercicio.id.in_(pedidos))).scalars()
+    )
+    if pedidos - existentes:
+        raise EjercicioNoEncontrado("Algún ejercicio del lote no existe en el catálogo.")
 
     # 3. Upsert de cada serie
     resultados: list[SerieSesion] = []

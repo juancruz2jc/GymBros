@@ -17,6 +17,7 @@ from app.schemas.sesion import (
 )
 from app.services import sesion_service
 from app.services.serie_service import (
+    EjercicioNoEncontrado,
     SesionFinalizada,
     SesionNoEncontrada,
     registrar_series,
@@ -108,9 +109,9 @@ def sesion_activa(
     status_code=status.HTTP_201_CREATED,
     summary="Registrar series en una sesión activa",
     responses={
-        404: {"description": "La sesión no existe o no pertenece al usuario autenticado"},
+        404: {"description": "La sesión no existe o no es del usuario, o algún ejercicio no existe"},
         409: {"description": "La sesión ya se encuentra finalizada"},
-        422: {"description": "Error de validación en los datos de entrada"},
+        422: {"description": "Error de validación en los datos de entrada o serie repetida en el lote"},
     },
 )
 def registrar_series_sesion(
@@ -145,6 +146,11 @@ def registrar_series_sesion(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="La sesión no existe o no pertenece al usuario autenticado.",
+        )
+    except EjercicioNoEncontrado:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Algún ejercicio del lote no existe en el catálogo.",
         )
     except SesionFinalizada:
         raise HTTPException(
