@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 # pyrefly: ignore [missing-import]
 from sqlalchemy.sql import func
 from app.models.base import Base
+from sqlalchemy.orm import relationship
 
 
 class Ejercicio(Base):
@@ -30,6 +31,7 @@ class Rutina(Base):
     favorita = Column(Boolean, default=False, nullable=False)
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), onupdate=func.now())
+    ejercicios = relationship("RutinaEjercicio", cascade="all, delete-orphan", backref="rutina")
 
 
 class RutinaEjercicio(Base):

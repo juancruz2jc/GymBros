@@ -2,10 +2,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.api.dependencies import get_db, get_current_user
-from app.schemas.rutina import RutinaCreate, RutinaResponse
+from app.schemas.rutina import RutinaCreate, RutinaResponse, RutinaUpdate
 from app.services import rutina_service
-
-
 
 router = APIRouter(prefix="/rutinas", tags=["rutinas"])
 
@@ -26,6 +24,37 @@ def listar_rutinas(
     """Lista todas las rutinas propias del usuario autenticado."""
     return rutina_service.listar_rutinas_usuario(db=db, usuario_id=current_user.id)
 
+@router.get("/{rutina_id}", response_model=RutinaResponse)
+def obtener_rutina(
+    rutina_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Punto 5: Obtiene el detalle de una rutina específica."""
+    rutina = rutina_service.obtener_rutina(db=db, rutina_id=rutina_id, usuario_id=current_user.id)
+    if not rutina:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rutina no encontrada o no tienes permisos"
+        )
+    return rutina
+
+@router.put("/{rutina_id}", response_model=RutinaResponse)
+def actualizar_rutina(
+    rutina_id: uuid.UUID,
+    rutina_in: RutinaUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Puntos 4 y 6: Edita nombre, favorita y/o reemplaza ejercicios."""
+    rutina = rutina_service.actualizar_rutina(db=db, rutina_id=rutina_id, rutina_in=rutina_in, usuario_id=current_user.id)
+    if not rutina:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rutina no encontrada o no tienes permisos"
+        )
+    return rutina
+
 @router.delete("/{rutina_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_rutina(
     rutina_id: uuid.UUID,
@@ -42,11 +71,12 @@ def eliminar_rutina(
     return None
 
 @router.post("/{rutina_id}/duplicar", response_model=RutinaResponse, status_code=status.HTTP_201_CREATED)
-def endpoint_duplicar_rutina(
+def duplicar_rutina(
     rutina_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    """RF-21: Duplica una rutina existente."""
     nueva_rutina = rutina_service.duplicar_rutina(db=db, rutina_id=rutina_id, usuario_id=current_user.id)
     
     if not nueva_rutina:

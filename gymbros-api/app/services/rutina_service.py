@@ -1,9 +1,35 @@
 import uuid
 from sqlalchemy.orm import Session
-from app.models.entrenamiento import Rutina, RutinaEjercicio
-from app.schemas.rutina import RutinaCreate
+from fastapi import HTTPException, status
+from app.models.entrenamiento import Rutina, RutinaEjercicio, Ejercicio
+from app.schemas.rutina import RutinaCreate, RutinaUpdate
+
+def validar_ejercicios_entrada(db: Session, ejercicios_in):
+    """Valida reglas de negocio de los ejercicios antes de insertarlos."""
+    if not ejercicios_in:
+        return
+
+    # Punto 7: Validar que el orden no se repita
+    ordenes = [e.orden for e in ejercicios_in]
+    if len(ordenes) != len(set(ordenes)):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El orden de los ejercicios no puede repetirse")
+    
+    # Punto 2: Validar que existan
+    ids_entrada = [e.ejercicio_id for e in ejercicios_in]
+    ejercicios_db = db.query(Ejercicio).filter(Ejercicio.id.in_(ids_entrada)).all()
+    
+    if len(ejercicios_db) != len(set(ids_entrada)):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uno o más ejercicios indicados no existen")
+        
+    # Punto 3: Validar que estén activos
+    for ej_db in ejercicios_db:
+        if not ej_db.activo:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"El ejercicio {ej_db.nombre_es} está inactivo")
+
 
 def crear_rutina(db: Session, rutina_in: RutinaCreate, usuario_id: uuid.UUID) -> Rutina:
+    validar_ejercicios_entrada(db, rutina_in.ejercicios)
+
     # 1. Crear el objeto Rutina
     nueva_rutina = Rutina(
         usuario_id=usuario_id,
@@ -30,10 +56,43 @@ def crear_rutina(db: Session, rutina_in: RutinaCreate, usuario_id: uuid.UUID) ->
     return nueva_rutina
 
 def listar_rutinas_usuario(db: Session, usuario_id: uuid.UUID) -> list[Rutina]:
-    return db.query(Rutina).filter(Rutina.usuario_id == usuario_id).all()
+    # Punto 7: order_by agregado
+    return db.query(Rutina).filter(Rutina.usuario_id == usuario_id).order_by(Rutina.creado_en.desc()).all()
 
 def obtener_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> Rutina | None:
     return db.query(Rutina).filter(Rutina.id == rutina_id, Rutina.usuario_id == usuario_id).first()
+
+def actualizar_rutina(db: Session, rutina_id: uuid.UUID, rutina_in: RutinaUpdate, usuario_id: uuid.UUID) -> Rutina | None:
+    rutina = obtener_rutina(db, rutina_id, usuario_id)
+    if not rutina:
+        return None
+    
+    # Puntos 4 y 6: Actualizar campos
+    if rutina_in.nombre is not None:
+        rutina.nombre = rutina_in.nombre
+    if rutina_in.favorita is not None:
+        rutina.favorita = rutina_in.favorita
+        
+    if rutina_in.ejercicios is not None:
+        validar_ejercicios_entrada(db, rutina_in.ejercicios)
+        
+        # Eliminar ejercicios anteriores y recrearlos (reemplazo total)
+        db.query(RutinaEjercicio).filter(RutinaEjercicio.rutina_id == rutina_id).delete()
+        
+        for ej in rutina_in.ejercicios:
+            nuevo_ejercicio = RutinaEjercicio(
+                rutina_id=rutina.id,
+                ejercicio_id=ej.ejercicio_id,
+                orden=ej.orden,
+                series_objetivo=ej.series_objetivo,
+                repeticiones_objetivo=ej.repeticiones_objetivo,
+                descanso_segundos=ej.descanso_segundos
+            )
+            db.add(nuevo_ejercicio)
+            
+    db.commit()
+    db.refresh(rutina)
+    return rutina
 
 def eliminar_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> bool:
     rutina = obtener_rutina(db, rutina_id, usuario_id)
