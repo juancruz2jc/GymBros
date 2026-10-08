@@ -6,7 +6,8 @@ from typing import List, Optional
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
@@ -23,6 +24,42 @@ from app.schemas.medicion import (
 ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 _CAMPOS_OBLIGATORIOS = ("peso_kg", "fecha")
 
+# BD-04: restricción única (usuario_id, fecha) en `mediciones`.
+_UQ_MEDICION_POR_DIA = "uq_usuario_fecha_medicion"
+
+
+class MedicionDuplicadaError(Exception):
+    """Ya hay una medición del usuario en esa fecha (BD-04: una por día).
+    El endpoint la traduce a HTTP 409."""
+
+
+class FechasSinMedicionError(Exception):
+    """RN-35: alguna de las fechas a comparar no tiene medición. Lleva cuáles,
+    para que el endpoint lo diga explícitamente (404)."""
+
+    def __init__(self, fechas: list[date]) -> None:
+        super().__init__(fechas)
+        self.fechas = fechas
+
+
+def _guardar(db: Session, medicion: Medicion) -> None:
+    """Commit que traduce la violación de "una medición por día" a
+    `MedicionDuplicadaError`.
+
+    Se resuelve intentando el INSERT/UPDATE y capturando el error de la
+    restricción, no consultando antes: dos peticiones simultáneas pasarían las
+    dos la consulta. Cualquier otro `IntegrityError` se relanza tal cual.
+    """
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        restriccion = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if restriccion == _UQ_MEDICION_POR_DIA:
+            raise MedicionDuplicadaError from exc
+        raise
+    db.refresh(medicion)
+
 
 # RN-09 a RN-13: Cálculo global de IMC (RF-07)
 def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | None:
@@ -31,6 +68,21 @@ def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | Non
     altura_m = Decimal(altura_cm) / Decimal(100)
     imc = Decimal(str(peso_kg)) / (altura_m * altura_m)
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+# RN-13: clasificación OMS. Se aplica sobre el IMC ya redondeado a 1 decimal,
+# el mismo que ve el usuario: un 24.95 se muestra como 25.0 y debe salir
+# `sobrepeso`, no `normal`.
+def clasificar_imc(imc: float | None) -> str | None:
+    if imc is None:
+        return None
+    if imc < 18.5:
+        return "bajo_peso"
+    if imc < 25.0:
+        return "normal"
+    if imc < 30.0:
+        return "sobrepeso"
+    return "obesidad"
 
 
 # RF-06: Registrar medición vinculada al usuario autenticado
@@ -50,7 +102,9 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
 
     nueva_medicion = Medicion(
         usuario_id=usuario.id,
-        fecha=datos.fecha,
+        # El día que cuenta (RN-70 y una medición por día) es el de Colombia,
+        # no el que traiga el datetime en otra zona horaria.
+        fecha=fecha_med.date(),
         peso_kg=datos.peso_kg,
         porcentaje_grasa=datos.porcentaje_grasa,
         masa_muscular_kg=datos.masa_muscular_kg,
@@ -62,8 +116,7 @@ def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> Medic
     )
 
     db.add(nueva_medicion)
-    db.commit()
-    db.refresh(nueva_medicion)
+    _guardar(db, nueva_medicion)
 
     return _a_response(nueva_medicion, usuario.altura_cm)
 
@@ -165,8 +218,8 @@ def actualizar_medicion(
             continue
         setattr(fila, campo, valor)
 
-    db.commit()
-    db.refresh(fila)
+    # Cambiar la fecha a un día que ya tiene medición choca con BD-04.
+    _guardar(db, fila)
     return _a_response(fila, usuario.altura_cm)
 
 
@@ -189,6 +242,7 @@ def eliminar_medicion(
 def _a_response(medicion: Medicion, altura_cm: int | None) -> MedicionResponse:
     respuesta = MedicionResponse.model_validate(medicion)
     respuesta.imc = calcular_imc(medicion.peso_kg, altura_cm)
+    respuesta.categoria_imc = clasificar_imc(respuesta.imc)
     return respuesta
 
 
@@ -199,27 +253,23 @@ def comparar_mediciones(
     usuario: Usuario,
     fecha1: date,
     fecha2: date,
-) -> Optional[MedicionComparativaResponse]:
-    # Consultar ambas mediciones para el usuario
-    med1 = db.execute(
-        select(Medicion).where(
-            Medicion.usuario_id == usuario.id,
-            Medicion.fecha == fecha1,
-        )
-        .order_by(desc(Medicion.creado_en))
+) -> MedicionComparativaResponse:
+    """Raises: FechasSinMedicionError si una o ambas fechas no tienen medición."""
+    # BD-04: a lo sumo una medición por usuario y fecha.
+    def _de_fecha(fecha: date) -> Medicion | None:
+        return db.execute(
+            select(Medicion).where(
+                Medicion.usuario_id == usuario.id,
+                Medicion.fecha == fecha,
+            )
+        ).scalar_one_or_none()
 
-    ).first()
+    med1 = _de_fecha(fecha1)
+    med2 = _de_fecha(fecha2)
 
-    med2 = db.execute(
-        select(Medicion).where(
-            Medicion.usuario_id == usuario.id,
-            Medicion.fecha == fecha2,
-        )
-        .order_by(desc(Medicion.creado_en))
-    ).first()
-
-    if not med1 or not med2:
-        return None
+    faltantes = [f for f, m in ((fecha1, med1), (fecha2, med2)) if m is None]
+    if faltantes:
+        raise FechasSinMedicionError(faltantes)
 
     # Ordenar cronológicamente para que la resta sea (reciente - anterior)
     if med1.fecha <= med2.fecha:

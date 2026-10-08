@@ -55,8 +55,8 @@ siempre el del token (RF-08).
 
 #### `200 OK` — lista de mediciones (`list[MedicionResponse]`)
 
-Orden: por `fecha` de la medición **ascendente** (RN-34), con `creado_en` como
-desempate estable cuando dos mediciones comparten fecha.
+Orden: por `fecha` de la medición **ascendente** (RN-34). Hay a lo sumo una
+medición por fecha (BD-04), así que no hace falta desempate.
 
 ```json
 [
@@ -65,6 +65,7 @@ desempate estable cuando dos mediciones comparten fecha.
     "fecha": "2025-01-10",
     "peso_kg": 80.0,
     "imc": 27.7,
+    "categoria_imc": "sobrepeso",
     "porcentaje_grasa": null,
     "masa_muscular_kg": null,
     "circunf_cintura_cm": null,
@@ -83,6 +84,7 @@ desempate estable cuando dos mediciones comparten fecha.
 | `fecha` | Fecha a la que corresponde la medición (la que el usuario declara). |
 | `peso_kg` | Peso en kg. Número JSON, no string. |
 | `imc` | **Calculado** (RN-12): `peso_kg / (altura_m)²` redondeado a 1 decimal, usando la **altura vigente del usuario** (`usuarios.altura_cm`), no la de la fecha de la medición (RN-30). `null` si el usuario no tiene altura registrada (RN-09). |
+| `categoria_imc` | **Calculado** (RF-07, RN-13), clasificación OMS sobre el `imc` ya redondeado: `bajo_peso` (< 18.5), `normal` (18.5–24.9), `sobrepeso` (25.0–29.9), `obesidad` (≥ 30.0). `null` cuando `imc` es `null`. |
 | `porcentaje_grasa`, `masa_muscular_kg`, `circunf_*_cm` | Campos opcionales de la medición; `null` si no se registraron. |
 | `creado_en` | Marca de tiempo (UTC) de cuando se registró la fila. Puede ser muy posterior a `fecha` (RN-34). |
 
@@ -182,11 +184,11 @@ cambian solo los campos presentes en el cuerpo; los omitidos quedan como estaban
 
 | Campo | Tipo | Regla |
 |---|---|---|
-| `fecha` | date (`YYYY-MM-DD`) | — |
-| `peso_kg` | number | **> 0** (RN-03) |
+| `fecha` | date (`YYYY-MM-DD`) | **No puede ser posterior a la fecha actual** en Colombia (RN-70). |
+| `peso_kg` | number | **≥ 0.01** (RN-03) — mínimo representable en la columna `NUMERIC(5,2)`. |
 | `porcentaje_grasa` | number | **0 – 100** (RN-04) |
-| `masa_muscular_kg` | number | **> 0** (RN-05) |
-| `circunf_cintura_cm`, `circunf_cadera_cm`, `circunf_brazo_cm`, `circunf_pierna_cm`, `circunf_pecho_cm` | number | **> 0** (RN-06) |
+| `masa_muscular_kg` | number | **≥ 0.01** (RN-05) — mismo mínimo que `peso_kg`. |
+| `circunf_cintura_cm`, `circunf_cadera_cm`, `circunf_brazo_cm`, `circunf_pierna_cm`, `circunf_pecho_cm` | number | **≥ 0.01** (RN-06) — mismo mínimo que `peso_kg`. |
 
 - **No acepta `usuario_id`** (RN-37): el esquema no lo declara; si llega en el
   cuerpo se **ignora en silencio**, no reasigna la medición.
@@ -201,6 +203,7 @@ cambian solo los campos presentes en el cuerpo; los omitidos quedan como estaban
 | `200 OK` | Editada. | `MedicionResponse` con los valores nuevos y el `imc` recalculado. |
 | `401 Unauthorized` | Sin token válido. | `{ "detail": "No autenticado." }` |
 | `404 Not Found` | El id no existe **o** es de otro usuario (RN-08). | `{ "detail": "Medición no encontrada." }` |
+| `409 Conflict` | Se cambió `fecha` a un día que ya tiene otra medición del usuario (BD-04). | `{ "detail": "Ya registraste una medición en esa fecha. Edítala en lugar de crear otra." }` |
 | `422 Unprocessable Entity` | Algún valor fuera de rango (RN-03 a RN-06), o `medicion_id` no es un UUID. | error de validación de FastAPI |
 
 ```bash
@@ -260,6 +263,38 @@ curl -i -X DELETE http://localhost:8001/api/v1/mediciones/8f14e45f-cea1-4c0b-9f6
 
 ---
 
+## Una medición por día (BD-04)
+
+Cada usuario tiene **a lo sumo una medición por fecha**: restricción única
+`uq_usuario_fecha_medicion (usuario_id, fecha)` en la base (migración
+`ce4773f63c25`). Decisión del equipo (opción A): el seguimiento corporal es
+diario como mucho, y así historial, comparar y gráficas no tienen que elegir
+entre varias del mismo día.
+
+- `POST /mediciones` en una fecha que ya tiene medición → **`409`**. Para
+  corregirla se edita con `PUT`.
+- `PUT /mediciones/{id}` que cambia `fecha` a un día ocupado → **`409`**.
+- El día que cuenta es el de **Colombia** (`America/Bogota`): un `POST` con
+  `fecha = 2026-10-08T02:00:00Z` se guarda como `2026-10-07` (21:00 en
+  Bogotá). Antes se validaba RN-70 con la fecha de Bogotá pero se guardaba la
+  del datetime original.
+- Se detecta capturando el error de la restricción al hacer `commit` (no
+  consultando antes), así dos peticiones simultáneas no pasan las dos.
+  `medicion_service._guardar` traduce solo esa restricción a
+  `MedicionDuplicadaError`; cualquier otro error de integridad se relanza.
+
+## `GET /api/v1/mediciones/comparar` (RF-09)
+
+Compara la medición de `fecha1` con la de `fecha2` (query, `YYYY-MM-DD`) y
+devuelve `medicion_anterior`, `medicion_reciente` y `diferencias`
+(reciente − anterior), sin importar en qué orden lleguen las fechas.
+
+| Código | Cuándo | Cuerpo |
+|---|---|---|
+| `200 OK` | Las dos fechas tienen medición. | `MedicionComparativaResponse` |
+| `400 Bad Request` | `fecha1 == fecha2`. | `{ "detail": "Debes ingresar dos fechas distintas..." }` |
+| `404 Not Found` | Una o ambas fechas no tienen medición. **El detalle dice cuál** (RN-35). | `{ "detail": "No tienes una medición registrada el 2026-09-07." }` o `{ "detail": "No tienes mediciones registradas el 2026-09-07 ni el 2026-08-01." }` |
+
 ## Reglas de negocio aplicadas
 
 | Regla | Exige | Dónde |
@@ -268,10 +303,11 @@ curl -i -X DELETE http://localhost:8001/api/v1/mediciones/8f14e45f-cea1-4c0b-9f6
 | RN-08 | Una medición registrada no puede ser leída, editada ni borrada por otro deportista | Las cuatro funciones (`obtener` / `actualizar` / `eliminar_medicion`) llevan `id` **y** `usuario_id` en el mismo `WHERE`. No hay "buscar por id y luego comparar `usuario_id` en un `if`". Ajena → `None`/`rowcount 0` → 404. |
 | RN-36 | Eliminar una medición es definitivo (sin papelera) | `eliminar_medicion` hace `DELETE` físico (`sqlalchemy.delete`), no marca una columna de baja. No hay tabla de papelera. |
 | RN-37 | Editar nunca reasigna la medición a otro `usuario_id` | `MedicionActualizar` no declara `usuario_id`; `actualizar_medicion` además hace `cambios.pop("usuario_id", None)` antes de aplicar. El `WHERE` de la búsqueda tampoco permite tocar una fila ajena. |
-| RN-03 | `peso_kg` > 0 | `Field(gt=0)` en `MedicionActualizar.peso_kg` → 422 si ≤ 0. |
+| RN-03 | `peso_kg` > 0 | `Field(ge=0.01)` en `MedicionActualizar.peso_kg` → 422 si `≤ 0` **o** si es un valor positivo que redondearía a `0.00` al persistir en `NUMERIC(5,2)` (p. ej. `0.001`) — corregido en GYM-176: antes era `Field(gt=0)`, que dejaba pasar esos valores y el `PUT` los guardaba silenciosamente como `0.00`. |
 | RN-04 | `porcentaje_grasa` entre 0 y 100 (inclusive) | `Field(ge=0, le=100)` → 422 fuera de rango. La columna es `NUMERIC(5,2)` desde la migración `9579bae4a653`, así que el `100` cabe sin overflow. |
-| RN-05 | `masa_muscular_kg` > 0 | `Field(gt=0)` → 422 si ≤ 0. |
-| RN-06 | Circunferencias > 0 | `Field(gt=0)` en los cinco `circunf_*_cm` → 422 si ≤ 0. |
+| RN-05 | `masa_muscular_kg` > 0 | `Field(ge=0.01)` → 422 si `≤ 0` o si redondea a `0.00` (mismo fix de GYM-176 que `peso_kg`). |
+| RN-06 | Circunferencias > 0 | `Field(ge=0.01)` en los cinco `circunf_*_cm` → 422 si `≤ 0` o si redondea a `0.00` (mismo fix de GYM-176). |
+| RN-70 | `fecha` no puede ser posterior a la fecha actual | `field_validator` en `MedicionActualizar.fecha` (`schemas/medicion.py`) → 422 si la fecha es futura según el día en `America/Bogota` (H-05). Corregido en GYM-169: el `PUT` no tenía esta validación (solo el `POST`, en `crear_medicion`) y aceptaba fechas futuras con `200`. |
 | RN-12 | `IMC = peso_kg / (altura_m)²` | `medicion_service.calcular_imc`, redondeado a 1 decimal (`ROUND_HALF_UP`). Se recalcula en la respuesta del `PUT`. |
 | RN-30 | El IMC usa la altura **vigente** del usuario, no la de la fecha de la medición | `calcular_imc` recibe `usuario.altura_cm` (columna `usuarios.altura_cm`), no un valor histórico. |
 | RN-34 | Orden por fecha de la medición, no por fecha de registro | `order_by(Medicion.fecha.asc(), Medicion.creado_en.asc())` — `creado_en` solo como desempate. |
@@ -285,9 +321,9 @@ Lo implementado se ajusta a RN-12 y RN-30 (que sí se confirmaron). Queda por
 confirmar contra el texto oficial:
 
 - **RN-09/10/11**: se asume "sin altura → `imc: null`" y redondeo a 1 decimal.
-- **RN-13 (clasificación OMS**: bajo peso / normal / sobrepeso / obesidad**)**:
-  **no** se incluye en la respuesta. Si RF-08 la necesita, se añade como campo
-  `categoria_imc` calculado junto a `imc`.
+- **RN-13 (clasificación OMS)**: implementada como `categoria_imc`
+  (`medicion_service.clasificar_imc`). Se clasifica el IMC **redondeado**, el
+  mismo que ve el usuario: `24.95` se muestra `25.0` y sale `sobrepeso`.
 
 ---
 
@@ -390,3 +426,9 @@ usuario **B** con 1 medición (`2025-04-02`, 65 kg).
    peso.
 6. **Sin tests automatizados** (pytest no se ha visto en el curso); la
    verificación son las tablas de casos de prueba de arriba, ejecutadas a mano.
+7. **RN-70 en `POST` responde `400`, en `PUT` responde `422` (GYM-169).** El
+   `POST` (`crear_medicion`) valida la fecha futura a mano con un `ValueError`
+   que el router traduce a `400`. El `PUT` la valida con un `field_validator`
+   de Pydantic (`MedicionActualizar.fecha`), consistente con RN-03 a RN-06 del
+   mismo schema, que da `422`. Queda **pendiente de decisión de equipo**
+   unificar el criterio (candidato: migrar también el `POST` a `422`).

@@ -19,6 +19,10 @@ from app.services import medicion_service
 
 router = APIRouter(prefix="/mediciones", tags=["mediciones"])
 
+_ERROR_DUPLICADA = (
+    "Ya registraste una medición en esa fecha. Edítala en lugar de crear otra."
+)
+
 
 # ---------------------------------------------------------
 # RF-06 / RF-07: Registrar medición corporal
@@ -28,15 +32,25 @@ router = APIRouter(prefix="/mediciones", tags=["mediciones"])
     response_model=MedicionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar una nueva medición corporal",
+    responses={409: {"description": "Ya hay una medición del usuario en esa fecha"}},
 )
 def registrar_medicion(
     datos: MedicionCrear,
     db: Session = Depends(get_db),
     usuario_actual: Usuario = Depends(get_current_user),
 ) -> MedicionResponse:
-    """Registra una medición vinculada al usuario autenticado (RN-60)."""
+    """Registra una medición vinculada al usuario autenticado (RN-60).
+
+    Una sola medición por día (BD-04): si ya existe una en esa fecha, 409. Para
+    corregirla se usa `PUT /mediciones/{id}`.
+    """
     try:
         return medicion_service.crear_medicion(db, usuario_actual, datos)
+    except medicion_service.MedicionDuplicadaError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_ERROR_DUPLICADA,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -96,7 +110,7 @@ def historial_mediciones(
     response_model=MedicionComparativaResponse,
     summary="Comparar dos mediciones por fecha",
     responses={
-        404: {"description": "No se encontraron registros en una o ambas fechas"},
+        404: {"description": "Una o ambas fechas no tienen medición; el detalle dice cuáles (RN-35)"},
         400: {"description": "Las fechas deben ser distintas"},
     },
 )
@@ -113,16 +127,19 @@ def comparar_mediciones(
             detail="Debes ingresar dos fechas distintas para realizar la comparación.",
         )
 
-    resultado = medicion_service.comparar_mediciones(
-        db, usuario=usuario, fecha1=fecha1, fecha2=fecha2
-    )
-    if resultado is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No se encontró registro de medición para una o ambas fechas indicadas.",
+    try:
+        return medicion_service.comparar_mediciones(
+            db, usuario=usuario, fecha1=fecha1, fecha2=fecha2
         )
-    return resultado
-    
+    except medicion_service.FechasSinMedicionError as e:
+        # RN-35: decir explícitamente qué fecha no tiene medición.
+        if len(e.fechas) == 1:
+            detalle = f"No tienes una medición registrada el {e.fechas[0]}."
+        else:
+            detalle = f"No tienes mediciones registradas el {e.fechas[0]} ni el {e.fechas[1]}."
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detalle)
+
+
 # ---------------------------------------------------------
 # RF-08: Detalle de una medición
 # ---------------------------------------------------------
@@ -154,7 +171,10 @@ def detalle_medicion(
     "/{medicion_id}",
     response_model=MedicionResponse,
     summary="Editar una medición del usuario autenticado",
-    responses={404: {"description": "No existe o no es del usuario autenticado"}},
+    responses={
+        404: {"description": "No existe o no es del usuario autenticado"},
+        409: {"description": "La nueva fecha ya tiene otra medición del usuario"},
+    },
 )
 def editar_medicion(
     medicion_id: UUID,
@@ -167,11 +187,18 @@ def editar_medicion(
     Actualización parcial: los campos omitidos no cambian. 404 si el id no existe
     o es de otra persona (RN-08), igual que el GET por id. 422 si algún valor
     sale de los rangos de RN-03 a RN-06. Un `usuario_id` en el cuerpo se ignora,
-    nunca reasigna la medición (RN-37).
+    nunca reasigna la medición (RN-37). 409 si se cambia `fecha` a un día que
+    ya tiene otra medición (BD-04).
     """
-    medicion = medicion_service.actualizar_medicion(
-        db, usuario=usuario, medicion_id=medicion_id, datos=datos
-    )
+    try:
+        medicion = medicion_service.actualizar_medicion(
+            db, usuario=usuario, medicion_id=medicion_id, datos=datos
+        )
+    except medicion_service.MedicionDuplicadaError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_ERROR_DUPLICADA,
+        )
     if medicion is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
