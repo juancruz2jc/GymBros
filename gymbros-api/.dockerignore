@@ -1,0 +1,11 @@
+# Lo que no debe entrar a la imagen. El .env se pasa con env_file en el
+# compose, nunca copiado: dentro de la imagen quedaría la contraseña de la base.
+.env
+.env.*
+!.env.example
+*.db
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+tests/

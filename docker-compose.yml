@@ -3,8 +3,19 @@ services:
   # gymbros-api/.env). Aquí solo corre la API.
   api:
     build: ./gymbros-api
+    restart: unless-stopped
     env_file: ./gymbros-api/.env
     ports:
       - "8001:8000"
     volumes:
       - ./gymbros-api:/code
+
+  # Página "en construcción" en la raíz del dominio. HTML estático: se edita
+  # landing/index.html y se ve al recargar, sin reconstruir nada.
+  landing:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8002:80"
+    volumes:
+      - ./landing:/usr/share/nginx/html:ro
