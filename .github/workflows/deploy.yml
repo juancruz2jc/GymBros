@@ -1,0 +1,32 @@
+# CI/CD (guía del docente): al unir cambios en dev, entra al VPS por SSH,
+# baja el código y reconstruye los contenedores. Todo lo que cambia entre
+# entornos (servidor, ruta, rama) está en los secrets del repositorio.
+name: deploy
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: desplegar en el VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: pull y docker compose por ssh
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin
+            git checkout ${{ secrets.DEPLOY_BRANCH }}
+            git pull origin ${{ secrets.DEPLOY_BRANCH }}
+            docker compose up -d --build
+            docker image prune -f

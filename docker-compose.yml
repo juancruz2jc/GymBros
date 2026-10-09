@@ -1,3 +1,5 @@
+# Puertos y nombre del proyecto salen del .env de la raíz (ver .env.example),
+# así un entorno nuevo (VPS, producción) solo cambia variables, no este archivo.
 services:
   # La base de datos es la compartida del equipo en Supabase (DATABASE_URL en
   # gymbros-api/.env). Aquí solo corre la API.
@@ -6,7 +8,7 @@ services:
     restart: unless-stopped
     env_file: ./gymbros-api/.env
     ports:
-      - "8001:8000"
+      - "127.0.0.1:${API_PORT:-8001}:8000"
     volumes:
       - ./gymbros-api:/code
 
@@ -16,6 +18,6 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "8002:80"
+      - "127.0.0.1:${LANDING_PORT:-8002}:80"
     volumes:
       - ./landing:/usr/share/nginx/html:ro
