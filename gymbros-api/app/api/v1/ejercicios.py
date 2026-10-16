@@ -1,10 +1,14 @@
-"""Endpoints del catálogo de ejercicios (RF-12)."""
+"""Endpoints de ejercicios: catálogo público (RF-12) y último registro (RF-20)."""
 
-from fastapi import APIRouter, Depends, Query
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db
-from app.schemas.ejercicio import EjercicioResponse
+from app.api.dependencies import get_current_user, get_db
+from app.models.usuario import Usuario
+from app.schemas.ejercicio import EjercicioResponse, UltimoRegistroResponse
+from app.services import ejercicio_service
 from app.services.ejercicio_service import listar_catalogo
 
 # RN-38: catálogo de solo lectura -> este router solo declara GET, nunca
@@ -47,3 +51,34 @@ def listar_ejercicios(
         equipo=equipo,
         categoria=categoria,
     )
+
+
+# RF-20. A diferencia del catálogo, esta ruta es PERSONAL: exige token y solo ve las
+# sesiones del usuario (RN-60). El resto del router sigue siendo público.
+@router.get(
+    "/{ejercicio_id}/ultimo-registro",
+    response_model=UltimoRegistroResponse | None,
+    summary="Última serie del usuario en un ejercicio (sugerencia de progresión)",
+    responses={
+        200: {"description": "La última serie, o `null` si el usuario nunca hizo el ejercicio"},
+        401: {"description": "No autenticado"},
+        404: {"description": "El ejercicio no existe"},
+        422: {"description": "`ejercicio_id` no es un UUID"},
+    },
+)
+def ultimo_registro(
+    ejercicio_id: UUID,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+) -> UltimoRegistroResponse | None:
+    """Última serie del usuario en este ejercicio, en cualquier sesión finalizada (RN-50).
+
+    Nunca haberlo hecho no es un error: responde `200` con cuerpo `null`. Un
+    ejercicio desactivado con historial también responde (RN-39).
+    """
+    try:
+        return ejercicio_service.obtener_ultimo_registro(
+            db, usuario=usuario_actual, ejercicio_id=ejercicio_id
+        )
+    except ejercicio_service.EjercicioNoEncontradoError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ejercicio no encontrado.")
