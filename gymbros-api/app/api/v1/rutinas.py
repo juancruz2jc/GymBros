@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.api.dependencies import get_db, get_current_user
 from app.schemas.rutina import RutinaCreate, RutinaResponse, RutinaUpdate
@@ -18,11 +18,12 @@ def crear_rutina(
 
 @router.get("", response_model=list[RutinaResponse])
 def listar_rutinas(
+    favoritas: bool = Query(False, description="true: solo las rutinas marcadas como favoritas (RF-22)."),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Lista todas las rutinas propias del usuario autenticado."""
-    return rutina_service.listar_rutinas_usuario(db=db, usuario_id=current_user.id)
+    return rutina_service.listar_rutinas_usuario(db=db, usuario_id=current_user.id, solo_favoritas=favoritas)
 
 @router.get("/{rutina_id}", response_model=RutinaResponse)
 def obtener_rutina(
@@ -51,6 +52,21 @@ def actualizar_rutina(
     if not rutina:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Rutina no encontrada o no tienes permisos"
+        )
+    return rutina
+
+@router.patch("/{rutina_id}/favorita", response_model=RutinaResponse)
+def alternar_favorita(
+    rutina_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """RF-22: alterna la rutina entre favorita y no favorita (RN-64). Sin body."""
+    rutina = rutina_service.alternar_favorita(db=db, rutina_id=rutina_id, usuario_id=current_user.id)
+    if not rutina:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Rutina no encontrada o no tienes permisos"
         )
     return rutina

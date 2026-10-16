@@ -1,4 +1,5 @@
 import uuid
+from sqlalchemy import not_, update
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.entrenamiento import Rutina, RutinaEjercicio, Ejercicio
@@ -55,9 +56,12 @@ def crear_rutina(db: Session, rutina_in: RutinaCreate, usuario_id: uuid.UUID) ->
     db.refresh(nueva_rutina)
     return nueva_rutina
 
-def listar_rutinas_usuario(db: Session, usuario_id: uuid.UUID) -> list[Rutina]:
+def listar_rutinas_usuario(db: Session, usuario_id: uuid.UUID, solo_favoritas: bool = False) -> list[Rutina]:
     # Punto 7: order_by agregado
-    return db.query(Rutina).filter(Rutina.usuario_id == usuario_id).order_by(Rutina.creado_en.desc()).all()
+    consulta = db.query(Rutina).filter(Rutina.usuario_id == usuario_id)
+    if solo_favoritas:  # RF-22: ?favoritas=true
+        consulta = consulta.filter(Rutina.favorita.is_(True))
+    return consulta.order_by(Rutina.creado_en.desc()).all()
 
 def obtener_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> Rutina | None:
     return db.query(Rutina).filter(Rutina.id == rutina_id, Rutina.usuario_id == usuario_id).first()
@@ -92,6 +96,28 @@ def actualizar_rutina(db: Session, rutina_id: uuid.UUID, rutina_in: RutinaUpdate
             
     db.commit()
     db.refresh(rutina)
+    return rutina
+
+def alternar_favorita(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> Rutina | None:
+    """RF-22: marca la rutina como favorita si no lo era, o la desmarca si lo era.
+
+    Es un solo UPDATE atómico (`favorita = NOT favorita`): un doble toque no puede
+    leer el mismo valor dos veces y dejar el estado incierto. No pasa por
+    `validar_ejercicios_entrada`: RN-39, una rutina con un ejercicio desactivado
+    sigue siendo válida y se puede marcar favorita.
+    """
+    rutina = db.execute(
+        update(Rutina)
+        .where(
+            Rutina.id == rutina_id,
+            Rutina.usuario_id == usuario_id,  # RN-60/RN-61: solo el dueño; ajena = inexistente
+        )
+        .values(favorita=not_(Rutina.favorita))  # RN-64: se alterna, sin límite de favoritas
+        .returning(Rutina)
+    ).scalar_one_or_none()
+    if rutina is None:
+        return None
+    db.commit()
     return rutina
 
 def eliminar_rutina(db: Session, rutina_id: uuid.UUID, usuario_id: uuid.UUID) -> bool:
