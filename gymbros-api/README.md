@@ -148,6 +148,53 @@ No es el catálogo definitivo: RF-12 prevé migrar a una fuente con licencia
 clara (wger) más adelante; las `gif_url` de este seed son marcadores de
 posición.
 
+### Sesiones de ejemplo (`scripts/seed_sesiones_demo.py`)
+
+Carga datos para probar el historial de entrenamientos (RF-19,
+`GET /api/v1/sesiones` y `GET /api/v1/sesiones/{id}`): paginación, filtro por
+fechas y casos borde. Requiere el catálogo de ejercicios ya sembrado.
+
+Crea tres usuarios de prueba, todos con contraseña `Demo12345`:
+
+| Correo | Qué tiene |
+|---|---|
+| `demo.historial@example.com` | 2 rutinas, **25 sesiones finalizadas** en los últimos ~90 días y 1 sesión **activa** |
+| `demo.ajeno@example.com` | 1 sesión propia, para comprobar el aislamiento entre usuarios (RN-60) |
+| `demo.vacio@example.com` | Sin sesiones: el historial debe responder lista vacía |
+
+Entre las 25 sesiones hay casos especiales: sin rutina (`rutina_id` NULL),
+una finalizada sin series, dos con un ejercicio inactivo (RN-39) y una a las
+9:30 p. m. hora de Bogotá (en UTC ya es el día siguiente).
+
+```powershell
+# Con Docker, desde la raíz del monorepo
+docker compose exec api python -m scripts.seed_sesiones_demo --confirmar
+
+# En local (venv), desde gymbros-api/
+python -m scripts.seed_sesiones_demo --confirmar
+```
+
+**⚠️ Nunca contra la base compartida (Supabase).** Estos datos son falsos y no
+se pueden borrar en bloque. Por eso el script:
+
+- **aborta** si el host de `DATABASE_URL` no es `localhost`, `127.0.0.1`, `::1`
+  o `db` (el servicio de la base en docker compose). No hay opción para
+  saltarse esta comprobación;
+- exige `--confirmar` e **imprime el host y la base** destino antes de escribir.
+
+Como el `.env` normal apunta a Supabase, para usarlo necesitas una PostgreSQL
+local: un `docker-compose.override.yml` **sin versionar** (añádelo a
+`.git/info/exclude`) con un servicio `db` (`postgres:16-alpine`) y el `.env` con
+host `db`. Después: `docker compose up -d --build`, `alembic upgrade head`,
+`seed_ejercicios` y este seed. Ese archivo nunca debe subirse: el despliegue del
+VPS ejecuta `docker compose up` y lo cargaría solo.
+
+Es **idempotente**: cada sesión tiene una `idempotency_key` fija
+(`demo-historial-01` ...), los usuarios se identifican por correo y las rutinas
+por nombre, así que repetirlo no duplica. Las fechas se calculan respecto al
+día de la primera ejecución. Para empezar de cero se borran los tres usuarios
+demo (la cascada borra todo lo suyo, RN-71).
+
 ---
 
 ## Estructura de carpetas
