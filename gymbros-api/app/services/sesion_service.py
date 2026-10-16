@@ -1,24 +1,38 @@
-"""Servicio del módulo de sesiones de entrenamiento (RF-15, RF-17, RF-18)."""
+"""Servicio del módulo de sesiones de entrenamiento (RF-15, RF-17, RF-18, RF-19)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.entrenamiento import Rutina, SerieSesion, Sesion
+from app.models.entrenamiento import Ejercicio, Rutina, SerieSesion, Sesion
 from app.models.usuario import Usuario
 from app.schemas.sesion import (
     CalificacionCrear,
     CalificacionResponse,
+    EjercicioHistorial,
+    SerieHistorial,
+    SesionDetalle,
     SesionFinalizar,
+    SesionHistorialItem,
     SesionIniciar,
 )
 
 # Margen para relojes de celular algo adelantados: una hora "futura" de hasta
 # 5 minutos se acepta; más que eso es un dato erróneo.
 _TOLERANCIA_RELOJ = timedelta(minutes=5)
+
+# RF-19: los filtros `desde`/`hasta` son días calendario de Colombia. El nombre
+# de la zona resuelve gracias al paquete `tzdata` (requirements.txt); Colombia
+# no tiene horario de verano, así que el desfase es siempre -05:00.
+_ZONA_COLOMBIA = ZoneInfo("America/Bogota")
+
+# RF-19: texto de `rutina_nombre` cuando la sesión no parte de una rutina
+# (entrenamiento libre, o rutina borrada: RN-43).
+_NOMBRE_ENTRENAMIENTO_LIBRE = "Entrenamiento libre"
 
 
 # ---------------------------------------------------------
@@ -259,3 +273,111 @@ def calificar_sesion(
     db.refresh(fila)
 
     return CalificacionResponse.model_validate(fila)
+
+
+# ---------------------------------------------------------
+# RF-19: Historial de entrenamientos
+# ---------------------------------------------------------
+def _inicio_del_dia_bogota(dia: date) -> datetime:
+    """Medianoche (00:00) de `dia` en Bogotá, como instante con zona horaria."""
+    return datetime.combine(dia, time.min, tzinfo=_ZONA_COLOMBIA)
+
+
+def _historial_base():
+    """SELECT común del historial: sesión + nombre de la rutina.
+
+    LEFT JOIN: RN-43, una sesión sin rutina (libre o rutina borrada) aparece
+    igual. El nombre llega en la misma consulta, sin N+1.
+    """
+    nombre = func.coalesce(Rutina.nombre, _NOMBRE_ENTRENAMIENTO_LIBRE).label("rutina_nombre")
+    return select(Sesion, nombre).outerjoin(Rutina, Rutina.id == Sesion.rutina_id)
+
+
+def _a_item(sesion: Sesion, rutina_nombre: str) -> dict:
+    return {
+        "id": sesion.id,
+        "iniciada_en": sesion.iniciada_en,
+        "finalizada_en": sesion.finalizada_en,
+        "duracion_segundos": sesion.duracion_segundos,  # RN-47: ya viene calculada
+        "rutina_id": sesion.rutina_id,
+        "rutina_nombre": rutina_nombre,
+        "calificacion": sesion.calificacion,
+    }
+
+
+def listar_historial(
+    db: Session,
+    *,
+    usuario: Usuario,
+    limit: int,
+    offset: int,
+    desde: date | None = None,
+    hasta: date | None = None,
+) -> list[SesionHistorialItem]:
+    """Sesiones finalizadas del usuario, de la más reciente a la más antigua."""
+    consulta = _historial_base().where(
+        Sesion.usuario_id == usuario.id,  # RN-60
+        Sesion.finalizada_en.is_not(None),  # solo finalizadas; la activa va en /activa
+    )
+    # `desde`/`hasta` son días de Bogotá, inclusivos: [desde 00:00, hasta+1 00:00).
+    if desde is not None:
+        consulta = consulta.where(Sesion.iniciada_en >= _inicio_del_dia_bogota(desde))
+    if hasta is not None:
+        consulta = consulta.where(
+            Sesion.iniciada_en < _inicio_del_dia_bogota(hasta + timedelta(days=1))
+        )
+    # RN-49: más reciente primero; `id` desempata para que la paginación sea estable.
+    consulta = consulta.order_by(Sesion.iniciada_en.desc(), Sesion.id.desc())
+    filas = db.execute(consulta.limit(limit).offset(offset)).all()
+    return [SesionHistorialItem(**_a_item(sesion, nombre)) for sesion, nombre in filas]
+
+
+def obtener_detalle_historial(
+    db: Session, *, usuario: Usuario, sesion_id: UUID
+) -> SesionDetalle:
+    """Detalle de una sesión finalizada propia, con las series agrupadas por ejercicio.
+
+    Raises:
+        SesionNoEncontradaError: no existe, es de otro usuario (RN-60) o sigue
+            activa (se consulta en `/sesiones/activa`).
+    """
+    fila = db.execute(
+        _historial_base().where(
+            Sesion.id == sesion_id,
+            Sesion.usuario_id == usuario.id,  # RN-60
+            Sesion.finalizada_en.is_not(None),
+        )
+    ).one_or_none()
+    if fila is None:
+        raise SesionNoEncontradaError
+    sesion, rutina_nombre = fila
+
+    # RN-39: no se filtra por `Ejercicio.activo`; uno desactivado sigue válido en sesiones.
+    series = db.execute(
+        select(SerieSesion, Ejercicio)
+        .join(Ejercicio, Ejercicio.id == SerieSesion.ejercicio_id)
+        .where(SerieSesion.sesion_id == sesion.id)
+        .order_by(SerieSesion.orden, SerieSesion.numero_serie)
+    ).all()
+
+    # Los ejercicios salen en orden de aparición (por `orden`); dentro de cada uno,
+    # las series por `numero_serie`.
+    grupos: dict[UUID, EjercicioHistorial] = {}
+    for serie, ejercicio in series:
+        grupo = grupos.get(ejercicio.id)
+        if grupo is None:
+            grupo = grupos[ejercicio.id] = EjercicioHistorial(
+                ejercicio_id=ejercicio.id,
+                nombre_es=ejercicio.nombre_es,
+                nombre_en=ejercicio.nombre_en,
+                series=[],
+            )
+        grupo.series.append(SerieHistorial.model_validate(serie))
+    for grupo in grupos.values():
+        grupo.series.sort(key=lambda s: s.numero_serie)
+
+    return SesionDetalle(
+        **_a_item(sesion, rutina_nombre),
+        nota=sesion.nota,
+        ejercicios=list(grupos.values()),
+    )

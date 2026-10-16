@@ -1,8 +1,9 @@
-"""Endpoints para sesiones de entrenamiento (RF-15, RF-16, RF-17, RF-18)."""
+"""Endpoints para sesiones de entrenamiento (RF-15, RF-16, RF-17, RF-18, RF-19)."""
 
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, get_db
@@ -11,7 +12,9 @@ from app.schemas.serie import SerieResponse, SeriesPayload
 from app.schemas.sesion import (
     CalificacionCrear,
     CalificacionResponse,
+    SesionDetalle,
     SesionFinalizar,
+    SesionHistorialItem,
     SesionIniciar,
     SesionResponse,
 )
@@ -79,6 +82,54 @@ def iniciar_sesion(
     return sesion
 
 
+# ---------------------------------------------------------
+# RF-19: Historial de entrenamientos
+# ---------------------------------------------------------
+# Primer listado paginado del proyecto. Patrón: `limit` (1-100, default 20) y
+# `offset` (>= 0, default 0) como query params validados con `Query(ge/le)`
+# (fuera de rango = 422); la respuesta es una lista plana, como los demás
+# listados. El orden es estable (iniciada_en desc, id desc), así que paginar no
+# repite ni pierde filas.
+@router.get(
+    "",
+    response_model=list[SesionHistorialItem],
+    summary="Historial de sesiones finalizadas",
+    responses={
+        401: {"description": "No autenticado"},
+        422: {"description": "limit/offset fuera de rango, fechas inválidas o `desde` posterior a `hasta`"},
+    },
+)
+def listar_historial(
+    limit: int = Query(default=20, ge=1, le=100, description="Máximo de sesiones a devolver."),
+    offset: int = Query(default=0, ge=0, description="Sesiones a saltar (paginación)."),
+    desde: date | None = Query(
+        default=None,
+        description=(
+            "Día mínimo inclusive (`YYYY-MM-DD`), día calendario de Bogotá. "
+            "Filtra por el inicio de la sesión."
+        ),
+    ),
+    hasta: date | None = Query(
+        default=None,
+        description="Día máximo inclusive (`YYYY-MM-DD`), día calendario de Bogotá.",
+    ),
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+) -> list[SesionHistorialItem]:
+    """Sesiones **finalizadas** del usuario, de la más reciente a la más antigua (RN-49).
+
+    La sesión activa no aparece aquí: se consulta en `GET /sesiones/activa`.
+    """
+    if desde is not None and hasta is not None and desde > hasta:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="`desde` no puede ser posterior a `hasta`.",
+        )
+    return sesion_service.listar_historial(
+        db, usuario=usuario_actual, limit=limit, offset=offset, desde=desde, hasta=hasta
+    )
+
+
 @router.get(
     "/activa",
     response_model=SesionResponse,
@@ -98,6 +149,34 @@ def sesion_activa(
             detail="No tienes una sesión activa.",
         )
     return sesion
+
+
+# RF-19: va DESPUÉS de `/activa`; si no, "activa" caería en el UUID y daría 422.
+@router.get(
+    "/{sesion_id}",
+    response_model=SesionDetalle,
+    summary="Detalle de una sesión finalizada",
+    responses={
+        401: {"description": "No autenticado"},
+        404: {"description": "No existe, es de otro usuario o sigue activa"},
+    },
+)
+def detalle_sesion(
+    sesion_id: UUID,
+    db: Session = Depends(get_db),
+    usuario_actual: Usuario = Depends(get_current_user),
+) -> SesionDetalle:
+    """Sesión finalizada propia con sus series agrupadas por ejercicio.
+
+    RN-60: una sesión ajena responde igual que una inexistente (404). Una sesión
+    activa también da 404: se consulta en `GET /sesiones/activa`.
+    """
+    try:
+        return sesion_service.obtener_detalle_historial(
+            db, usuario=usuario_actual, sesion_id=sesion_id
+        )
+    except sesion_service.SesionNoEncontradaError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ERROR_NO_ENCONTRADA)
 
 
 # ---------------------------------------------------------
