@@ -4,6 +4,9 @@
 `POST /sesiones/{id}/finalizar`; `SesionResponse` es la salida de ambas y de
 `GET /sesiones/activa`.
 
+`SesionHistorialItem` es el elemento de `GET /sesiones` y `SesionDetalle` la salida
+de `GET /sesiones/{id}` (RF-19, historial de sesiones finalizadas).
+
 `CalificacionCrear` es la entrada de `PATCH /sesiones/{id}/calificacion`.
 `CalificacionResponse` es la salida: los campos de calificación junto con el id
 de la sesión para confirmar la operación.
@@ -64,6 +67,51 @@ class SesionResponse(BaseModel):
     duracion_segundos: Optional[int] = None
     calificacion: Optional[int] = None
     nota: Optional[str] = None
+
+
+class SesionHistorialItem(BaseModel):
+    """Una sesión finalizada en el listado del historial (RF-19)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    iniciada_en: datetime
+    finalizada_en: datetime
+    duracion_segundos: Optional[int] = None
+    # RN-43: si la rutina se borró, la sesión sigue ahí con rutina_id = null.
+    rutina_id: Optional[uuid.UUID] = None
+    rutina_nombre: str = Field(
+        ..., description='Nombre de la rutina, o "Entrenamiento libre" si no tiene.'
+    )
+    calificacion: Optional[int] = None
+
+
+class SerieHistorial(BaseModel):
+    """Una serie dentro del detalle de una sesión."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    numero_serie: int
+    repeticiones_realizadas: int
+    peso_usado_kg: float
+
+
+class EjercicioHistorial(BaseModel):
+    """Las series de un mismo ejercicio dentro del detalle de una sesión."""
+
+    ejercicio_id: uuid.UUID
+    nombre_es: str
+    nombre_en: str
+    series: list[SerieHistorial]
+
+
+class SesionDetalle(SesionHistorialItem):
+    """Detalle de una sesión finalizada: el item más nota y series agrupadas."""
+
+    nota: Optional[str] = None
+    ejercicios: list[EjercicioHistorial] = Field(
+        default_factory=list, description="Vacía si la sesión no tiene series."
+    )
 
 
 class CalificacionCrear(BaseModel):
