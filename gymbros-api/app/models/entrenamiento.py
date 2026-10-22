@@ -1,11 +1,12 @@
 import uuid
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Numeric, Text, ForeignKey, UniqueConstraint
 # pyrefly: ignore [missing-import]
 from sqlalchemy.dialects.postgresql import UUID
 # pyrefly: ignore [missing-import]
 from sqlalchemy.sql import func
 from app.models.base import Base
+from sqlalchemy.orm import relationship
 
 
 class Ejercicio(Base):
@@ -30,6 +31,7 @@ class Rutina(Base):
     favorita = Column(Boolean, default=False, nullable=False)
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), onupdate=func.now())
+    ejercicios = relationship("RutinaEjercicio", cascade="all, delete-orphan", backref="rutina")
 
 
 class RutinaEjercicio(Base):
@@ -55,12 +57,14 @@ class Sesion(Base):
     finalizada_en = Column(DateTime(timezone=True), nullable=True)
     calificacion = Column(Integer, nullable=True)
     nota = Column(Text, nullable=True)
-    duracion_segundos = Column(Integer, nullable=False)
+    duracion_segundos = Column(Integer, nullable=True)
 
 
 class SerieSesion(Base):
     __tablename__ = "series_sesion"
-
+    __table_args__ = (
+        UniqueConstraint('sesion_id', 'ejercicio_id', 'numero_serie', name='uq_sesion_ejercicio_serie'),
+    )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sesion_id = Column(UUID(as_uuid=True), ForeignKey("sesiones.id", ondelete="CASCADE"), index=True, nullable=False)
     ejercicio_id = Column(UUID(as_uuid=True), ForeignKey("ejercicios.id", ondelete="RESTRICT"), index=True, nullable=False)

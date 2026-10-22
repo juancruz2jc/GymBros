@@ -1,0 +1,39 @@
+# GymBros
+
+Aplicación móvil de entrenamiento personal. El deportista registra sus
+mediciones corporales, crea y ejecuta sus rutinas, y hace seguimiento de su
+progreso — sin depender de un gimnasio.
+
+Proyecto de la materia Aplicaciones Móviles · MVC · Popayán, Colombia
+
+---
+
+## Estructura del repositorio
+
+```
+GymBros/
+├── gymbros-api/     Backend — FastAPI + PostgreSQL
+├── gymbros-app/     App móvil — React Native (pendiente)
+├── docs/            Requisitos, reglas de negocio, diccionario de datos y guías
+└── docker-compose.yml
+```
+
+---
+
+## Arrancar el proyecto
+
+```powershell
+docker compose up --build
+```
+
+La base de datos es una sola, compartida por el equipo en Supabase. Las
+instrucciones completas — cómo configurar el `.env` con la conexión y el modo
+con venv para quien no pueda usar Docker — están en el
+[README del backend](gymbros-api/README.md).
+
+| Qué | URL |
+|---|---|
+| API | http://localhost:8001 |
+| Swagger (documentación y pruebas) | http://localhost:8001/docs |
+
+---

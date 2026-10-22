@@ -23,5 +23,5 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Documentación (temporal — se versiona al cerrar el sprint)
-docs/
+# Bases de datos locales (SQLite de pruebas)
+*.db

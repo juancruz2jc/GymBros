@@ -1,6 +1,6 @@
 import uuid
 # pyrefly: ignore [missing-import]
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, JSON, ForeignKey, text
 # pyrefly: ignore [missing-import]
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 # pyrefly: ignore [missing-import]
@@ -21,6 +21,12 @@ class Usuario(Base):
     codigo_gimnasio = Column(String(50), nullable=True)
     tiene_experiencia_previa = Column(Boolean, nullable=True)
     preferencias_notificacion = Column(JSONB, nullable=True)
+    # Ley 1581: consentimiento de tratamiento de datos. Se exige en el registro
+    # (RF-01) y se guarda con la marca de tiempo del momento en que se otorgó.
+    # server_default=false solo cubre filas preexistentes; el registro siempre
+    # lo fija de forma explícita.
+    consentimiento_datos = Column(Boolean, nullable=False, server_default=text("false"))
+    consentimiento_en = Column(DateTime(timezone=True), nullable=True)
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), onupdate=func.now())
 
