@@ -19,3 +19,8 @@ email-validator==2.2.0
 # Zonas horarias (America/Bogota). Windows no trae la base del sistema: sin
 # esto, el modo venv falla con ZoneInfoNotFoundError.
 tzdata==2025.2
+
+# Pruebas automatizadas
+pytest==8.3.4
+httpx==0.28.1
+pytest-cov==6.0.0
