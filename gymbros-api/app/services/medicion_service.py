@@ -1,63 +1,134 @@
-"""Mediciones (RF-08, RF-11): historial, IMC (RN-09 a RN-13), edición y borrado.
+"""Servicio del módulo de mediciones corporales (RF-06, RF-07, RF-08, RF-10, RF-11)."""
 
-Lectura (`listar_mediciones`, `obtener_medicion`), edición (`actualizar_medicion`)
-y borrado (`eliminar_medicion`), todo restringido al usuario dueño. Nada de
-FastAPI aquí; las reglas viven en este módulo.
-"""
-
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import List, Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.medicion import Medicion
 from app.models.usuario import Usuario
-from app.schemas.medicion import MedicionActualizar, MedicionResponse
+from app.schemas.medicion import (
+    DiferenciasMedicion,
+    MedicionActualizar,
+    MedicionComparativaResponse,
+    MedicionCrear,
+    MedicionResponse,
+)
 
-# Columnas NOT NULL de `mediciones`: un `null` explícito en el cuerpo del PUT no
-# puede vaciarlas, así que se ignora.
+# H-05: Zona horaria oficial para evitar desfases con UTC
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 _CAMPOS_OBLIGATORIOS = ("peso_kg", "fecha")
 
+# BD-04: restricción única (usuario_id, fecha) en `mediciones`.
+_UQ_MEDICION_POR_DIA = "uq_usuario_fecha_medicion"
 
-def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | None:
-    """IMC = peso_kg / (altura_m)^2 (RN-12), redondeado a 1 decimal.
 
-    La `altura_cm` que se pasa debe ser la **vigente del usuario**
-    (`usuarios.altura_cm`), no la de la fecha de la medición (RN-30): el IMC
-    histórico se recalcula siempre con la altura actual.
+class MedicionDuplicadaError(Exception):
+    """Ya hay una medición del usuario en esa fecha (BD-04: una por día).
+    El endpoint la traduce a HTTP 409."""
 
-    RN-09: sin altura registrada (o no positiva) no hay IMC -> devuelve `None`,
-    no un 0 ni un error.
+
+class FechasSinMedicionError(Exception):
+    """RN-35: alguna de las fechas a comparar no tiene medición. Lleva cuáles,
+    para que el endpoint lo diga explícitamente (404)."""
+
+    def __init__(self, fechas: list[date]) -> None:
+        super().__init__(fechas)
+        self.fechas = fechas
+
+
+def _guardar(db: Session, medicion: Medicion) -> None:
+    """Commit que traduce la violación de "una medición por día" a
+    `MedicionDuplicadaError`.
+
+    Se resuelve intentando el INSERT/UPDATE y capturando el error de la
+    restricción, no consultando antes: dos peticiones simultáneas pasarían las
+    dos la consulta. Cualquier otro `IntegrityError` se relanza tal cual.
     """
-    if not altura_cm or altura_cm <= 0:  # RN-09
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        restriccion = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if restriccion == _UQ_MEDICION_POR_DIA:
+            raise MedicionDuplicadaError from exc
+        raise
+    db.refresh(medicion)
+
+
+# RN-09 a RN-13: Cálculo global de IMC (RF-07)
+def calcular_imc(peso_kg: Decimal | float, altura_cm: int | None) -> float | None:
+    if not altura_cm or altura_cm <= 0:
         return None
     altura_m = Decimal(altura_cm) / Decimal(100)
-    imc = Decimal(str(peso_kg)) / (altura_m * altura_m)  # RN-12
+    imc = Decimal(str(peso_kg)) / (altura_m * altura_m)
     return float(imc.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
+# RN-13: clasificación OMS. Se aplica sobre el IMC ya redondeado a 1 decimal,
+# el mismo que ve el usuario: un 24.95 se muestra como 25.0 y debe salir
+# `sobrepeso`, no `normal`.
+def clasificar_imc(imc: float | None) -> str | None:
+    if imc is None:
+        return None
+    if imc < 18.5:
+        return "bajo_peso"
+    if imc < 25.0:
+        return "normal"
+    if imc < 30.0:
+        return "sobrepeso"
+    return "obesidad"
+
+
+# RF-06: Registrar medición vinculada al usuario autenticado
+def crear_medicion(db: Session, usuario: Usuario, datos: MedicionCrear) -> MedicionResponse:
+    # H-05: Se calcula "hoy" basado en la hora local de Colombia (UTC-5)
+    ahora_co = datetime.now(ZONA_COLOMBIA)
+
+    fecha_med = datos.fecha
+    if fecha_med.tzinfo is None:
+        fecha_med = fecha_med.replace(tzinfo=ZONA_COLOMBIA)
+    else:
+        fecha_med = fecha_med.astimezone(ZONA_COLOMBIA)
+
+    # RN-70: La fecha de medición no puede ser futura respecto al día local
+    if fecha_med.date() > ahora_co.date():
+        raise ValueError("La fecha de medición no puede ser futura")
+
+    nueva_medicion = Medicion(
+        usuario_id=usuario.id,
+        # El día que cuenta (RN-70 y una medición por día) es el de Colombia,
+        # no el que traiga el datetime en otra zona horaria.
+        fecha=fecha_med.date(),
+        peso_kg=datos.peso_kg,
+        porcentaje_grasa=datos.porcentaje_grasa,
+        masa_muscular_kg=datos.masa_muscular_kg,
+        circunf_cintura_cm=datos.circunf_cintura_cm,
+        circunf_cadera_cm=datos.circunf_cadera_cm,
+        circunf_brazo_cm=datos.circunf_brazo_cm,
+        circunf_pierna_cm=datos.circunf_pierna_cm,
+        circunf_pecho_cm=datos.circunf_pecho_cm,
+    )
+
+    db.add(nueva_medicion)
+    _guardar(db, nueva_medicion)
+
+    return _a_response(nueva_medicion, usuario.altura_cm)
+
+
+# RF-08: Historial y consulta de mediciones (GYM-79)
 def listar_mediciones(
     db: Session,
     *,
     usuario: Usuario,
     desde: date | None = None,
     hasta: date | None = None,
-) -> list[MedicionResponse]:
-    """Historial del `usuario` autenticado, en orden cronológico.
-
-    El `usuario_id` sale del usuario autenticado (del token) y se aplica en el
-    `WHERE`, nunca en un filtro posterior: un usuario no puede ver mediciones de
-    otro (RF-08).
-
-    RN-34: el orden es por `fecha` de la medición, ascendente, **no** por
-    `creado_en`. Alguien puede registrar hoy una medición fechada la semana
-    pasada y aun así debe caer en su sitio en la gráfica. `creado_en` solo entra
-    como desempate estable cuando dos mediciones comparten `fecha`.
-
-    `desde` y `hasta` son opcionales y ambos inclusivos.
-    """
+) -> List[MedicionResponse]:
     consulta = select(Medicion).where(Medicion.usuario_id == usuario.id)
 
     if desde is not None:
@@ -65,9 +136,7 @@ def listar_mediciones(
     if hasta is not None:
         consulta = consulta.where(Medicion.fecha <= hasta)
 
-    # RN-34: por fecha de la medición, no por creado_en.
     consulta = consulta.order_by(Medicion.fecha.asc(), Medicion.creado_en.asc())
-
     filas = db.execute(consulta).scalars().all()
     return [_a_response(fila, usuario.altura_cm) for fila in filas]
 
@@ -77,14 +146,7 @@ def obtener_medicion(
     *,
     usuario: Usuario,
     medicion_id: UUID,
-) -> MedicionResponse | None:
-    """Una medición del `usuario` autenticado por su id, o `None`.
-
-    `id` y `usuario_id` van juntos en el `WHERE`: una medición que existe pero es
-    de otro usuario devuelve `None` igual que un id inexistente. El endpoint
-    traduce ambos casos al mismo 404, sin confirmar ni negar que el id exista
-    (no filtrar información: 404, nunca 403).
-    """
+) -> Optional[MedicionResponse]:
     consulta = select(Medicion).where(
         Medicion.id == medicion_id,
         Medicion.usuario_id == usuario.id,
@@ -95,6 +157,44 @@ def obtener_medicion(
     return _a_response(fila, usuario.altura_cm)
 
 
+# RF-10: Detección de inactividad por umbral de 30 días
+def obtener_estado_inactividad(db: Session, usuario: Usuario) -> dict:
+    # H-05: 'hoy' se evalúa con la fecha real de Colombia
+    fecha_hoy = datetime.now(ZONA_COLOMBIA).date()
+
+    stmt = (
+        select(Medicion)
+        .where(
+            Medicion.usuario_id == usuario.id,
+            Medicion.fecha <= fecha_hoy
+        )
+        .order_by(desc(Medicion.fecha))
+        .limit(1)
+    )
+    ultima_medicion = db.scalar(stmt)
+
+    if not ultima_medicion:
+        return {
+            "ultima_medicion": None,
+            "dias_desde_ultima_medicion": None,
+            "esta_inactivo": False
+        }
+
+    fecha_ult = (
+        ultima_medicion.fecha
+        if isinstance(ultima_medicion.fecha, date) and not isinstance(ultima_medicion.fecha, datetime)
+        else ultima_medicion.fecha.date()
+    )
+
+    dias_transcurridos = max(0, (fecha_hoy - fecha_ult).days)
+
+    return {
+        "ultima_medicion": ultima_medicion.fecha,
+        "dias_desde_ultima_medicion": dias_transcurridos,
+        "esta_inactivo": dias_transcurridos >= 30
+    }
+
+
 def actualizar_medicion(
     db: Session,
     *,
@@ -102,18 +202,6 @@ def actualizar_medicion(
     medicion_id: UUID,
     datos: MedicionActualizar,
 ) -> MedicionResponse | None:
-    """Edita una medición del `usuario`. `None` si no es suya o no existe.
-
-    RN-08: `id` y `usuario_id` van juntos en el `WHERE`; una medición ajena no se
-    encuentra (el endpoint responde 404), sin un `if fila.usuario_id == ...`
-    posterior.
-
-    RN-37: nunca se escribe `usuario_id`. El schema `MedicionActualizar` ni lo
-    declara; aun así se descarta de forma explícita antes de aplicar los cambios.
-
-    Actualización parcial: solo se escriben los campos presentes en `datos`
-    (`exclude_unset`). Un `null` explícito sobre una columna NOT NULL se ignora.
-    """
     fila = db.execute(
         select(Medicion).where(
             Medicion.id == medicion_id,
@@ -124,14 +212,14 @@ def actualizar_medicion(
         return None
 
     cambios = datos.model_dump(exclude_unset=True)
-    cambios.pop("usuario_id", None)  # RN-37
+    cambios.pop("usuario_id", None)
     for campo, valor in cambios.items():
         if valor is None and campo in _CAMPOS_OBLIGATORIOS:
             continue
         setattr(fila, campo, valor)
 
-    db.commit()
-    db.refresh(fila)
+    # Cambiar la fecha a un día que ya tiene medición choca con BD-04.
+    _guardar(db, fila)
     return _a_response(fila, usuario.altura_cm)
 
 
@@ -141,15 +229,6 @@ def eliminar_medicion(
     usuario: Usuario,
     medicion_id: UUID,
 ) -> bool:
-    """Borra definitivamente una medición del `usuario`. `True` si borró algo.
-
-    RN-36: el borrado es físico; no hay papelera ni columna de baja lógica en
-    este alcance.
-
-    RN-08: `id` y `usuario_id` van juntos en el `WHERE`. Una medición ajena no se
-    borra y la función devuelve `False` (el endpoint responde 404),
-    indistinguible de un id inexistente.
-    """
     resultado = db.execute(
         delete(Medicion).where(
             Medicion.id == medicion_id,
@@ -161,7 +240,65 @@ def eliminar_medicion(
 
 
 def _a_response(medicion: Medicion, altura_cm: int | None) -> MedicionResponse:
-    """Serializa una fila y le añade el IMC calculado (no es columna)."""
     respuesta = MedicionResponse.model_validate(medicion)
     respuesta.imc = calcular_imc(medicion.peso_kg, altura_cm)
+    respuesta.categoria_imc = clasificar_imc(respuesta.imc)
     return respuesta
+
+
+# RF-09: Comparar dos mediciones por fecha
+def comparar_mediciones(
+    db: Session,
+    *,
+    usuario: Usuario,
+    fecha1: date,
+    fecha2: date,
+) -> MedicionComparativaResponse:
+    """Raises: FechasSinMedicionError si una o ambas fechas no tienen medición."""
+    # BD-04: a lo sumo una medición por usuario y fecha.
+    def _de_fecha(fecha: date) -> Medicion | None:
+        return db.execute(
+            select(Medicion).where(
+                Medicion.usuario_id == usuario.id,
+                Medicion.fecha == fecha,
+            )
+        ).scalar_one_or_none()
+
+    med1 = _de_fecha(fecha1)
+    med2 = _de_fecha(fecha2)
+
+    faltantes = [f for f, m in ((fecha1, med1), (fecha2, med2)) if m is None]
+    if faltantes:
+        raise FechasSinMedicionError(faltantes)
+
+    # Ordenar cronológicamente para que la resta sea (reciente - anterior)
+    if med1.fecha <= med2.fecha:
+        m_anterior, m_reciente = med1, med2
+    else:
+        m_anterior, m_reciente = med2, med1
+
+    res_anterior = _a_response(m_anterior, usuario.altura_cm)
+    res_reciente = _a_response(m_reciente, usuario.altura_cm)
+
+    def _diff(v_rec: float | None, v_ant: float | None) -> float | None:
+        if v_rec is None or v_ant is None:
+            return None
+        return round(v_rec - v_ant, 2)
+
+    diferencias = DiferenciasMedicion(
+        peso_kg=_diff(res_reciente.peso_kg, res_anterior.peso_kg),
+        porcentaje_grasa=_diff(res_reciente.porcentaje_grasa, res_anterior.porcentaje_grasa),
+        masa_muscular_kg=_diff(res_reciente.masa_muscular_kg, res_anterior.masa_muscular_kg),
+        circunf_cintura_cm=_diff(res_reciente.circunf_cintura_cm, res_anterior.circunf_cintura_cm),
+        circunf_cadera_cm=_diff(res_reciente.circunf_cadera_cm, res_anterior.circunf_cadera_cm),
+        circunf_brazo_cm=_diff(res_reciente.circunf_brazo_cm, res_anterior.circunf_brazo_cm),
+        circunf_pierna_cm=_diff(res_reciente.circunf_pierna_cm, res_anterior.circunf_pierna_cm),
+        circunf_pecho_cm=_diff(res_reciente.circunf_pecho_cm, res_anterior.circunf_pecho_cm),
+        imc=_diff(res_reciente.imc, res_anterior.imc),
+    )
+
+    return MedicionComparativaResponse(
+        medicion_anterior=res_anterior,
+        medicion_reciente=res_reciente,
+        diferencias=diferencias,
+    )

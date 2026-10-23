@@ -1,0 +1,73 @@
+# CI/CD (guía del docente): al unir cambios en dev o main, entra al VPS por
+# SSH, baja el código, escribe los .env desde los secrets y reconstruye los
+# contenedores.
+#
+# Un solo workflow para los dos entornos:
+#   dev  -> environment "development" (gymbros-dev.apolobyte.online)
+#   main -> environment "production"
+# Lo que cambia entre entornos (ruta, puertos, .env) vive en los secrets de
+# cada environment de GitHub; lo común (servidor, usuario, llave) en los
+# secrets del repositorio.
+name: deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+# Nunca dos despliegues del mismo entorno a la vez: si llegan dos merges
+# seguidos, el segundo espera a que termine el primero.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: desplegar ${{ github.ref_name }} en el VPS
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    steps:
+      - name: pull, .env desde secrets y docker compose por ssh
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            # 1. Código: la rama que disparó el workflow
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull --ff-only origin ${{ github.ref_name }}
+
+            # 2. Variables de entorno: se escriben desde los secrets en cada
+            #    despliegue; nunca se versionan ni se editan a mano en el VPS
+            cat > .env <<'EOF'
+            ${{ secrets.ENV_FILE }}
+            EOF
+            cat > gymbros-api/.env <<'EOF'
+            ${{ secrets.API_ENV_FILE }}
+            EOF
+            chmod 600 .env gymbros-api/.env
+
+            # 3. Contenedores
+            docker compose up -d --build
+            docker image prune -f
+
+            # 4. Verificación: el despliegue solo es exitoso si la API responde
+            set -a; . ./.env; set +a
+            for intento in $(seq 1 10); do
+              if curl -fsS "http://127.0.0.1:${API_PORT}/salud" > /dev/null; then
+                echo "API arriba en el puerto ${API_PORT}"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "La API no respondió en /salud después de 30 segundos"
+            docker compose logs --tail=50 api
+            exit 1

@@ -26,8 +26,9 @@ GymBros/
 docker compose up --build
 ```
 
-Las instrucciones completas — incluido el modo con venv para quien no
-pueda usar Docker — están en el
+La base de datos es una sola, compartida por el equipo en Supabase. Las
+instrucciones completas — cómo configurar el `.env` con la conexión y el modo
+con venv para quien no pueda usar Docker — están en el
 [README del backend](gymbros-api/README.md).
 
 | Qué | URL |
