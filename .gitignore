@@ -25,3 +25,11 @@ Thumbs.db
 
 # Bases de datos locales (SQLite de pruebas)
 *.db
+
+# Pruebas (pytest / cobertura)
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+reporte-pruebas.xml
