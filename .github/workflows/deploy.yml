@@ -1,6 +1,12 @@
-# CI/CD (guía del docente): al unir cambios en dev o main, entra al VPS por
-# SSH, baja el código, escribe los .env desde los secrets y reconstruye los
-# contenedores.
+# CI/CD (guía del docente).
+#
+# 1. pruebas: en cada PR hacia dev/main y en cada push a dev/main corre la
+#    suite de pytest contra un PostgreSQL desechable (service container),
+#    con cobertura mínima (gymbros-api/.coveragerc) y verificación de que todo
+#    endpoint tenga al menos una prueba (--verificar-rutas).
+# 2. deploy: solo en push (merge) a dev o main, y SOLO si las pruebas pasaron
+#    (`needs: pruebas`). Entra al VPS por SSH, baja el código, escribe los .env
+#    desde los secrets y reconstruye los contenedores.
 #
 # Un solo workflow para los dos entornos:
 #   dev  -> environment "development" (gymbros-dev.apolobyte.online)
@@ -8,26 +14,106 @@
 # Lo que cambia entre entornos (ruta, puertos, .env) vive en los secrets de
 # cada environment de GitHub; lo común (servidor, usuario, llave) en los
 # secrets del repositorio.
-name: deploy
+name: ci-cd
 
 on:
   push:
     branches:
       - dev
       - main
+  pull_request:
+    branches:
+      - dev
+      - main
   workflow_dispatch:
 
-# Nunca dos despliegues del mismo entorno a la vez: si llegan dos merges
-# seguidos, el segundo espera a que termine el primero.
+# En un PR, un push nuevo cancela las pruebas del commit anterior (ya no
+# importan). En dev/main nada se cancela: cada merge se prueba y despliega.
 concurrency:
-  group: deploy-${{ github.ref_name }}
-  cancel-in-progress: false
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  pruebas:
+    name: pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Base de datos SOLO para las pruebas: nace vacía y muere con el job.
+    # Nunca se usa la de Supabase (conftest.py se niega si la URL no es de test).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gymbros
+          POSTGRES_PASSWORD: gymbros
+          POSTGRES_DB: gymbros_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gymbros -d gymbros_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: gymbros-api
+
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg2://gymbros:gymbros@localhost:5432/gymbros_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # la misma del Dockerfile
+          cache: pip
+          cache-dependency-path: gymbros-api/requirements.txt
+
+      - name: instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: pytest (migraciones + unitarias + endpoints + cobertura)
+        run: >-
+          pytest
+          --verificar-rutas
+          --cov=app
+          --cov-report=term-missing
+          --cov-report=xml
+          --junitxml=reporte-pruebas.xml
+
+      - name: resumen de cobertura
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            echo "## Cobertura de pruebas" >> "$GITHUB_STEP_SUMMARY"
+            coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+      - name: guardar reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-pruebas
+          path: |
+            gymbros-api/reporte-pruebas.xml
+            gymbros-api/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
   deploy:
     name: desplegar ${{ github.ref_name }} en el VPS
+    needs: pruebas
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    # Nunca dos despliegues del mismo entorno a la vez: si llegan dos merges
+    # seguidos, el segundo espera a que termine el primero.
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
     steps:
       - name: pull, .env desde secrets y docker compose por ssh
         uses: appleboy/ssh-action@v1.0.0
