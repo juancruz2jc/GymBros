@@ -54,11 +54,15 @@ usuario de prueba se piden al equipo; **no se escriben en el repositorio**.
 En cualquier pantalla:
 
 ```tsx
-const { usuario, cargando, autenticado, login, registrar, logout } = useAuth();
+const { usuario, cargando, autenticado, login, registrar, logout, actualizarUsuario } =
+    useAuth();
 ```
 
 `login`, `registrar` y `logout` son asíncronas. Si `login` o `registrar` fallan,
-la pantalla muestra el mensaje con `getErrorMessage(error)`.
+la pantalla muestra el mensaje con `getErrorMessage(error)`. Si una pantalla
+cambia datos del usuario, llama a `actualizarUsuario(usuario)` con la respuesta
+de la API para que se vean en toda la app. El botón de cerrar sesión está en
+`Perfil`.
 
 | Momento | Qué pasa |
 |---|---|
@@ -87,7 +91,7 @@ gymbros-mobile/
 └── src/
     ├── components/       componentes reutilizables
     ├── context/          estado compartido (AuthContext)
-    ├── hooks/            hooks propios (useAuth, useInicio)
+    ├── hooks/            hooks propios (useAuth, useInicio, usePerfil)
     ├── navigation/       AuthStack, Tabs, RootNavigator y tipos de rutas
     ├── screens/          una carpeta por módulo
     │   ├── auth/
@@ -119,9 +123,7 @@ gymbros-mobile/
 | `FormScroll` | Formulario que no tapa el teclado | `children` |
 | `Checkbox` | Casilla con texto | `label`, `checked`, `handleChange`, `disabled?` |
 | `TextLink` | Enlace de texto | `label`, `handleClick`, `disabled?` |
-
-`Input` ampliado, `FormScroll` y `TextLink` llegan con GYM-184; `Checkbox`, con
-GYM-185.
+| `Chips` | Elegir una opción entre varias | `label`, `options`, `selected?`, `handleChange`, `disabled?` |
 
 ## Tipos y servicios compartidos
 
@@ -130,6 +132,9 @@ reutilízalo.** Si falta algo, agrégalo en el mismo archivo.
 
 | Archivo | Qué ofrece |
 |---|---|
+| `types/usuario.ts` | `Usuario`, `UsuarioActualizar` |
+| `services/authService.ts` | `me` (perfil), además de login, registro y logout |
+| `services/usuarioService.ts` | `actualizarPerfil` |
 | `types/sesion.ts` | `Sesion`, `SesionHistorialItem`, `SesionIniciarDatos` |
 | `types/medicion.ts` | `Medicion` |
 | `types/rutina.ts` | `Rutina`, `RutinaEjercicio` |
@@ -169,10 +174,10 @@ Si una pantalla necesita otro parámetro, primero se agrega en `types.ts`.
 
 ## Pantallas y responsables
 
-`Login` (GYM-184), `Registro` (GYM-185) e `Inicio` (GYM-186) ya están
-implementadas. Las demás son hoy un texto con su nombre: quien la tenga asignada
-reemplaza el contenido del archivo y conserva el nombre del componente exportado.
-`Inicio` tiene un botón temporal de cerrar sesión hasta que exista en `Perfil`.
+`Login` (GYM-184), `Registro` (GYM-185), `Inicio` (GYM-186) y `Perfil`
+(GYM-190) ya están implementadas. Las demás son hoy un texto con su nombre: quien
+la tenga asignada reemplaza el contenido del archivo y conserva el nombre del
+componente exportado.
 
 | Ruta | Archivo (en `src/screens/`) | Parámetros | Responsable |
 |---|---|---|---|
@@ -185,7 +190,7 @@ reemplaza el contenido del archivo y conserva el nombre del componente exportado
 | Progreso | `progreso/Progreso.tsx` | — | Karen |
 | RegistrarMedicion | `progreso/RegistrarMedicion.tsx` | `medicionId?` | Karen |
 | CompararMediciones | `progreso/CompararMediciones.tsx` | — | Karen |
-| Perfil | `perfil/Perfil.tsx` | — | Karen |
+| Perfil | `perfil/Perfil.tsx` | — | Juan David |
 | EntrenamientoActivo | `entrenamiento/EntrenamientoActivo.tsx` | `sesionId` | Juan José |
 | Resumen | `entrenamiento/Resumen.tsx` | `sesionId` | Juan José |
 | Historial | `historial/Historial.tsx` | — | Juan José |
