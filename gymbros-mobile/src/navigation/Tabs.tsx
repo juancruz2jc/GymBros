@@ -36,7 +36,7 @@ export const Tabs = () => {
                 tabBarActiveBackgroundColor: theme.colors.primarySoft,
                 // La barra: fondo claro, bordes redondos y separada de los lados.
                 tabBarStyle: {
-                    backgroundColor: theme.colors.card,
+                    backgroundColor: theme.colors.surface,
                     borderColor: theme.colors.border,
                     borderTopColor: theme.colors.border,
                     borderWidth: 1,

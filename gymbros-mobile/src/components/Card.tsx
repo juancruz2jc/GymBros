@@ -20,7 +20,7 @@ export const Card = ({ title, children }: Props) => {
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: theme.colors.card,
+        backgroundColor: theme.colors.surface,
         borderColor: theme.colors.border,
         borderRadius: 16,
         borderWidth: 1,
