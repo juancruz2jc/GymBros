@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
     pressed: { opacity: 0.7 },
     disabled: { opacity: 0.5 },
     label: {
-        color: theme.colors.primary,
+        color: theme.colors.primaryText, // más oscuro: se lee mejor en texto pequeño
         fontSize: theme.fontSize.md,
         fontWeight: 'bold',
     },
