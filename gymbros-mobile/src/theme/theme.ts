@@ -2,13 +2,15 @@
 // valores en lugar de escribir colores o tamaños sueltos.
 export const theme = {
     colors: {
-        primary: '#A05237',
-        background: '#FFF8F5',
-        surface: '#FFFFFF',
+        primary: '#E15A1D',
+        primaryText: '#B4461A', // naranja oscuro, solo para texto pequeño
+        primarySoft: '#F2D0BF', // resalta la pestaña activa
+        background: '#F6F2EE', // beige de fondo
+        surface: '#F2E6D8', // tarjetas, barra de pestañas y campos de texto
         text: '#1F1A17',
         textMuted: '#6F625C',
         onPrimary: '#FFFFFF',
-        border: '#DDD0CA',
+        border: '#D3C4B6',
         error: '#B3261E',
         success: '#2E7D32',
     },
