@@ -37,6 +37,7 @@ export const Chips = ({ label, options, selected = null, handleChange, disabled 
                             disabled={disabled}
                             accessibilityRole="radio"
                             accessibilityState={{ checked, disabled }}
+                            aria-checked={checked} // en web, accessibilityState no basta
                         >
                             <Text style={[styles.text, checked && styles.textChecked]}>
                                 {option.label}
