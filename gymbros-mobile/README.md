@@ -87,7 +87,7 @@ gymbros-mobile/
 └── src/
     ├── components/       componentes reutilizables
     ├── context/          estado compartido (AuthContext)
-    ├── hooks/            hooks propios (useAuth)
+    ├── hooks/            hooks propios (useAuth, useInicio)
     ├── navigation/       AuthStack, Tabs, RootNavigator y tipos de rutas
     ├── screens/          una carpeta por módulo
     │   ├── auth/
@@ -99,7 +99,8 @@ gymbros-mobile/
     │   └── entrenamiento/
     ├── services/         llamadas a la API
     ├── theme/            colores, espaciados y tamaños de fuente
-    └── types/            tipos compartidos
+    ├── types/            tipos compartidos
+    └── utils/            validaciones y formatos
 ```
 
 ## Componentes base
@@ -109,9 +110,33 @@ gymbros-mobile/
 | `Screen` | Contenedor de cada pantalla | `children` |
 | `StyledButton` | Botón principal | `label`, `handleClick`, `color?`, `disabled?` |
 | `FAB` | Botón flotante | `label`, `position?`, `color?`, `onPress?`, `onLongPress?` |
-| `Input` | Campo de texto | `label`, `value`, `onChangeText`, `error?`, `secureTextEntry?` |
+| `Input` | Campo de texto | `label`, `value`, `onChangeText`, `error?`, `secureTextEntry?`, `keyboardType?`, `autoCapitalize?`, `autoComplete?` |
 | `EmptyState` | Pantalla sin datos | `message`, `actionLabel?`, `onAction?` |
 | `Loading` | Indicador de carga | `color?` |
+| `Card` | Tarjeta con título | `title`, `children` |
+| `ActionButton` | Botón grande de la acción principal | `title`, `subtitle?`, `handleClick`, `disabled?` |
+| `Stars` | Calificación de 1 a 5 (solo lectura) | `value`, `size?` |
+| `FormScroll` | Formulario que no tapa el teclado | `children` |
+| `Checkbox` | Casilla con texto | `label`, `checked`, `handleChange`, `disabled?` |
+| `TextLink` | Enlace de texto | `label`, `handleClick`, `disabled?` |
+
+`Input` ampliado, `FormScroll` y `TextLink` llegan con GYM-184; `Checkbox`, con
+GYM-185.
+
+## Tipos y servicios compartidos
+
+**Antes de crear un tipo o una llamada a la API, revisa si ya existe y
+reutilízalo.** Si falta algo, agrégalo en el mismo archivo.
+
+| Archivo | Qué ofrece |
+|---|---|
+| `types/sesion.ts` | `Sesion`, `SesionHistorialItem`, `SesionIniciarDatos` |
+| `types/medicion.ts` | `Medicion` |
+| `types/rutina.ts` | `Rutina`, `RutinaEjercicio` |
+| `services/sesionService.ts` | `obtenerSesionActiva` (null si no hay), `obtenerHistorial(limit, offset)`, `iniciarSesion` |
+| `services/medicionService.ts` | `obtenerMediciones` (de la más antigua a la más reciente) |
+| `services/rutinaService.ts` | `obtenerRutinas` |
+| `utils/formato.ts` | `formatearDiaYMes`, `formatearFecha`, `formatearDuracion` |
 
 ## Navegación
 
@@ -144,9 +169,10 @@ Si una pantalla necesita otro parámetro, primero se agrega en `types.ts`.
 
 ## Pantallas y responsables
 
-Cada pantalla es hoy un texto con su nombre, salvo `Login` (formulario mínimo) e
-`Inicio` (botón temporal de cerrar sesión). Quien la tenga asignada reemplaza el
-contenido del archivo y conserva el nombre del componente exportado.
+`Login` (GYM-184), `Registro` (GYM-185) e `Inicio` (GYM-186) ya están
+implementadas. Las demás son hoy un texto con su nombre: quien la tenga asignada
+reemplaza el contenido del archivo y conserva el nombre del componente exportado.
+`Inicio` tiene un botón temporal de cerrar sesión hasta que exista en `Perfil`.
 
 | Ruta | Archivo (en `src/screens/`) | Parámetros | Responsable |
 |---|---|---|---|
