@@ -31,7 +31,8 @@ export const Tabs = () => {
                 ),
             })}
         >
-            <Tab.Screen name="Inicio" component={Inicio} />
+            {/* Inicio no lleva encabezado: empieza directamente con el saludo. */}
+            <Tab.Screen name="Inicio" component={Inicio} options={{ headerShown: false }} />
             <Tab.Screen name="Rutinas" component={Rutinas} />
             <Tab.Screen name="Progreso" component={Progreso} />
             <Tab.Screen name="Historial" component={Historial} />
