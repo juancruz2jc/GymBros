@@ -51,3 +51,28 @@ export const validarConfirmacion = (password: string, confirmacion: string) => {
     }
     return password === confirmacion ? '' : 'Las contraseñas no coinciden.';
 };
+
+// Al editar el perfil, la API exige un nombre de 2 a 100 caracteres.
+export const validarNombrePerfil = (nombre: string) => {
+    const limpio = nombre.trim();
+    if (limpio.length < 2 || limpio.length > 100) {
+        return 'El nombre debe tener entre 2 y 100 caracteres.';
+    }
+    return '';
+};
+
+// La altura es opcional; si se escribe, debe ser un entero de 51 a 299.
+export const validarAltura = (altura: string) => {
+    const limpia = altura.trim();
+    if (limpia === '') {
+        return '';
+    }
+    if (!/^\d+$/.test(limpia)) {
+        return 'Escribe la altura en centímetros, sin decimales.';
+    }
+    const valor = Number(limpia);
+    if (valor < 51 || valor > 299) {
+        return 'La altura debe estar entre 51 y 299 cm.';
+    }
+    return '';
+};

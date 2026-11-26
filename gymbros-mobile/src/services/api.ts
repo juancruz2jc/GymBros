@@ -142,6 +142,8 @@ const NOMBRES_DE_CAMPO: Record<string, string> = {
     correo: 'Correo',
     password: 'Contraseña',
     nombre: 'Nombre',
+    sexo: 'Sexo',
+    altura_cm: 'Altura',
 };
 
 // Convierte un error de validación (viene en inglés) en una frase legible.

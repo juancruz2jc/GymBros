@@ -11,6 +11,7 @@ interface AuthContextValue {
     login: (datos: LoginDatos) => Promise<void>;
     registrar: (datos: RegistroDatos) => Promise<void>;
     logout: () => Promise<void>;
+    actualizarUsuario: (usuario: Usuario) => void;
 }
 
 // Las pantallas no usan este contexto directamente, sino el hook useAuth.
@@ -68,8 +69,17 @@ export const AuthProvider = ({ children }: Props) => {
         setUsuario(null);
     };
 
+    // Reemplaza los datos del usuario tras editar el perfil, para que toda la
+    // app los vea sin volver a pedirlos.
+    const actualizarUsuario = (nuevo: Usuario) => {
+        // Si ya se cerró la sesión, una respuesta atrasada no la vuelve a abrir.
+        setUsuario((actual) => (actual ? nuevo : null));
+    };
+
     return (
-        <AuthContext.Provider value={{ usuario, cargando, login, registrar, logout }}>
+        <AuthContext.Provider
+            value={{ usuario, cargando, login, registrar, logout, actualizarUsuario }}
+        >
             {children}
         </AuthContext.Provider>
     );
