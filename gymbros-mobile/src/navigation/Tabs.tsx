@@ -66,7 +66,7 @@ export const Tabs = () => {
             <Tab.Screen name="Rutinas" component={Rutinas} />
             <Tab.Screen name="Progreso" component={Progreso} />
             <Tab.Screen name="Historial" component={Historial} />
-            <Tab.Screen name="Perfil" component={Perfil} />
+            <Tab.Screen name="Perfil" component={Perfil} options={{ headerShown: false }} />
         </Tab.Navigator>
     );
 };
