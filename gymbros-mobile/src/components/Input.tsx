@@ -1,15 +1,20 @@
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { theme } from '../theme/theme';
 
 // Input: campo de texto con etiqueta y mensaje de error.
-// Props: label, value, onChangeText, error (texto que se muestra debajo) y
-// secureTextEntry (oculta lo escrito, para contraseñas).
+// Props: label, value, onChangeText, error (texto que se muestra debajo),
+// secureTextEntry (oculta lo escrito, para contraseñas), keyboardType (tipo de
+// teclado), autoCapitalize (mayúsculas automáticas) y autoComplete (qué dato
+// puede sugerir el celular).
 interface Props {
     label: string;
     value: string;
     onChangeText: (text: string) => void;
     error?: string;
     secureTextEntry?: boolean;
+    keyboardType?: TextInputProps['keyboardType'];
+    autoCapitalize?: TextInputProps['autoCapitalize'];
+    autoComplete?: TextInputProps['autoComplete'];
 }
 
 export const Input = ({
@@ -18,6 +23,9 @@ export const Input = ({
     onChangeText,
     error = '',
     secureTextEntry = false,
+    keyboardType = 'default',
+    autoCapitalize = 'sentences',
+    autoComplete = 'off',
 }: Props) => {
     return (
         <View style={styles.container}>
@@ -27,6 +35,9 @@ export const Input = ({
                 value={value}
                 onChangeText={onChangeText}
                 secureTextEntry={secureTextEntry}
+                keyboardType={keyboardType}
+                autoCapitalize={autoCapitalize}
+                autoComplete={autoComplete}
                 accessibilityLabel={label}
             />
             {error !== '' && <Text style={styles.error}>{error}</Text>}
