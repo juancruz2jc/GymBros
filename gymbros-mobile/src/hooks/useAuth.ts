@@ -7,7 +7,7 @@ export const useAuth = () => {
     if (!contexto) {
         throw new Error('useAuth se debe usar dentro de <AuthProvider>.');
     }
-    const { usuario, cargando, login, registrar, logout } = contexto;
+    const { usuario, cargando, login, registrar, logout, actualizarUsuario } = contexto;
 
     return {
         // properties
@@ -18,5 +18,6 @@ export const useAuth = () => {
         login,
         registrar,
         logout,
+        actualizarUsuario,
     };
 };
