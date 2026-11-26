@@ -30,8 +30,8 @@ export const Tabs = () => {
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
-                // La pestaña activa se resalta con el color principal.
-                tabBarActiveTintColor: theme.colors.primary,
+                // La pestaña activa se resalta con fondo naranja suave y texto oscuro.
+                tabBarActiveTintColor: theme.colors.primaryText,
                 tabBarInactiveTintColor: theme.colors.textMuted,
                 tabBarActiveBackgroundColor: theme.colors.primarySoft,
                 // La barra: fondo claro, bordes redondos y separada de los lados.

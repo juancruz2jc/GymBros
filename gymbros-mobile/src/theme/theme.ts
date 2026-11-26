@@ -3,6 +3,7 @@
 export const theme = {
     colors: {
         primary: '#E15A1D',
+        primaryText: '#B4461A', // naranja oscuro, solo para texto pequeño
         primarySoft: '#F2D0BF', // resalta la pestaña activa
         background: '#F6F2EE', // beige de fondo
         surface: '#F2E6D8', // tarjetas, barra de pestañas y campos de texto
