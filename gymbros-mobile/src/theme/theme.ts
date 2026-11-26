@@ -3,12 +3,14 @@
 export const theme = {
     colors: {
         primary: '#A05237',
-        background: '#FFF8F5',
-        surface: '#FFFFFF',
+        primarySoft: '#F2D0BF', // resalta la pestaña activa
+        background: '#F6F2ED', // beige de fondo
+        card: '#F2E6D9', // tarjetas y barra de pestañas
+        surface: '#FFFFFF', // campos de texto
         text: '#1F1A17',
         textMuted: '#6F625C',
         onPrimary: '#FFFFFF',
-        border: '#DDD0CA',
+        border: '#D3C4B6',
         error: '#B3261E',
         success: '#2E7D32',
     },
