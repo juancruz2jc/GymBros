@@ -46,17 +46,37 @@ desarrollo (`npm install` lo instala).
 > se ven las pantallas, pero las llamadas a la API quedan bloqueadas. Para probar
 > datos reales, usa el celular.
 
-## Ver el login o las pestañas
+## Sesión
 
-Mientras no exista `useAuth`, un flag temporal en
-`src/navigation/RootNavigator.tsx` decide qué se muestra:
+Para entrar a las pestañas hay que iniciar sesión. El correo y la contraseña del
+usuario de prueba se piden al equipo; **no se escriben en el repositorio**.
 
-```ts
-const MOSTRAR_AUTH: boolean = true;   // Login y Registro
-const MOSTRAR_AUTH: boolean = false;  // Pestañas y demás pantallas
+En cualquier pantalla:
+
+```tsx
+const { usuario, cargando, autenticado, login, registrar, logout } = useAuth();
 ```
 
-No subas cambios a este flag en tu PR.
+`login`, `registrar` y `logout` son asíncronas. Si `login` o `registrar` fallan,
+la pantalla muestra el mensaje con `getErrorMessage(error)`.
+
+| Momento | Qué pasa |
+|---|---|
+| Login o registro | Se guardan los tokens y se pide el perfil (`/usuarios/me`) |
+| Al abrir la app | Si hay tokens guardados: refresh, perfil y pestañas. Si no, Login |
+| Una petición responde 401 | Se renuevan los tokens una sola vez y se reintenta |
+| El refresh responde 401 | Se borran los tokens y se vuelve a Login |
+| El refresh falla por red o error del servidor | Los tokens se conservan y se reintenta después |
+| Cerrar sesión | Se borran los tokens y se revoca el refresh en el servidor |
+
+Los tokens se guardan con `expo-secure-store`. En web se usa `localStorage`, que
+no los cifra: sirve solo para desarrollo.
+
+Para llamar a la API se usa `api` de `src/services/api.ts` (ya pone el token):
+
+```ts
+const { data } = await api.get('/rutinas');
+```
 
 ## Estructura
 
@@ -66,7 +86,8 @@ gymbros-mobile/
 ├── index.ts              registra App
 └── src/
     ├── components/       componentes reutilizables
-    ├── hooks/            hooks propios
+    ├── context/          estado compartido (AuthContext)
+    ├── hooks/            hooks propios (useAuth)
     ├── navigation/       AuthStack, Tabs, RootNavigator y tipos de rutas
     ├── screens/          una carpeta por módulo
     │   ├── auth/
@@ -123,7 +144,8 @@ Si una pantalla necesita otro parámetro, primero se agrega en `types.ts`.
 
 ## Pantallas y responsables
 
-Cada pantalla es hoy un texto con su nombre. Quien la tenga asignada reemplaza el
+Cada pantalla es hoy un texto con su nombre, salvo `Login` (formulario mínimo) e
+`Inicio` (botón temporal de cerrar sesión). Quien la tenga asignada reemplaza el
 contenido del archivo y conserva el nombre del componente exportado.
 
 | Ruta | Archivo (en `src/screens/`) | Parámetros | Responsable |
