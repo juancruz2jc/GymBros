@@ -1,4 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Loading } from '../components/Loading';
+import { useAuth } from '../hooks/useAuth';
 import { DetalleEntrenamiento } from '../screens/historial/DetalleEntrenamiento';
 import { EntrenamientoActivo } from '../screens/entrenamiento/EntrenamientoActivo';
 import { Resumen } from '../screens/entrenamiento/Resumen';
@@ -9,10 +11,6 @@ import { DetalleRutina } from '../screens/rutinas/DetalleRutina';
 import { AuthStack } from './AuthStack';
 import { Tabs } from './Tabs';
 import { MainStackParamList } from './types';
-
-// Flag TEMPORAL: true muestra Login y Registro; false muestra las pestañas.
-// En la tanda 2 se reemplaza por el estado de useAuth.
-const MOSTRAR_AUTH: boolean = true;
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -57,7 +55,13 @@ const MainStack = () => {
     );
 };
 
-// RootNavigator: decide qué parte de la app se muestra.
+// RootNavigator: decide qué parte de la app se muestra según la sesión. Al
+// cambiar `autenticado` se pasa de un stack al otro sin llamar a navigate().
 export const RootNavigator = () => {
-    return MOSTRAR_AUTH ? <AuthStack /> : <MainStack />;
+    const { cargando, autenticado } = useAuth();
+
+    if (cargando) {
+        return <Loading />;
+    }
+    return autenticado ? <MainStack /> : <AuthStack />;
 };
