@@ -1,5 +1,4 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '../../components/ActionButton';
 import { Card } from '../../components/Card';
@@ -15,7 +14,7 @@ import { formatearDiaYMes, formatearDuracion, formatearFecha } from '../../utils
 // Inicio: saludo, acción principal, último entrenamiento y última medición
 // (GYM-186).
 export const Inicio = () => {
-    const { usuario, logout } = useAuth();
+    const { usuario } = useAuth();
     const navigation = useNavigation();
     const {
         sesionActiva,
@@ -30,7 +29,6 @@ export const Inicio = () => {
         recargar,
         iniciarEntrenamiento,
     } = useInicio();
-    const [cerrando, setCerrando] = useState(false);
 
     const abrirEntrenamiento = (sesionId: string) => {
         navigation.navigate('EntrenamientoActivo', { sesionId });
@@ -41,12 +39,6 @@ export const Inicio = () => {
         if (sesionId) {
             abrirEntrenamiento(sesionId);
         }
-    };
-
-    // TEMPORAL: hasta que la pantalla Perfil tenga el cierre de sesión.
-    const cerrarSesion = async () => {
-        setCerrando(true);
-        await logout(); // al terminar, RootNavigator vuelve a Login
     };
 
     // El botón grande depende de la situación de la persona.
@@ -155,13 +147,6 @@ export const Inicio = () => {
                         </Card>
                     </>
                 )}
-
-                <StyledButton
-                    label="Cerrar sesión"
-                    color={theme.colors.textMuted}
-                    handleClick={cerrarSesion}
-                    disabled={cerrando}
-                />
             </ScrollView>
         </Screen>
     );
