@@ -15,3 +15,6 @@ export interface Medicion {
     categoria_imc: string | null;
     creado_en: string;
 }
+
+// Valores posibles de `categoria_imc` (clasificación OMS, RN-13).
+export type CategoriaImc = 'bajo_peso' | 'normal' | 'sobrepeso' | 'obesidad';
