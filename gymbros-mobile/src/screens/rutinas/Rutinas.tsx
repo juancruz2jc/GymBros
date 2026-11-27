@@ -9,6 +9,7 @@ import { useRutinas } from '../../hooks/useRutinas';
 import { MainStackParamList } from '../../navigation/types';
 import { theme } from '../../theme/theme';
 import { Rutina } from '../../types/rutina';
+import { FAB } from '../../components/FAB';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -198,13 +199,14 @@ export const Rutinas = () => {
                         }
                     />
 
-                    <View style={styles.footer}>
-                        <Pressable style={styles.createFooterButton} onPress={irACrearRutina}>
-                            <Text style={styles.createFooterButtonText}>+ Crear nueva rutina</Text>
-                        </Pressable>
-                    </View>
+
+
                 </>
             )}
+            <FAB
+                label="+ Nueva rutina"
+                handleClick={irACrearRutina}
+            />
         </Screen>
     );
 };
