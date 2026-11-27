@@ -50,8 +50,9 @@ desarrollo (`npm install` lo instala).
 
 La app se puede instalar en Android sin tener Expo abierto en un computador.
 
-**Descargar:** [APK de GymBros](https://expo.dev/artifacts/eas/woIFjV_ijhBc-OQrPOihEkgrWNirv-434bo5xozEw5w.apk) (abre el enlace desde el celular y
-toca *Install*). Android pedirá permitir la instalación desde el navegador: es
+**Descargar:** [APK de GymBros 1.0.0](https://expo.dev/artifacts/eas/xHtksWzCxOWHca8KFhduz3wXo1Xh5lCEyowqlb2c8Lw.apk)
+(generado desde `main`; abre el enlace desde el celular y toca *Install*).
+[Ver el build en EAS](https://expo.dev/accounts/juanjosecruz/projects/gymbros-mobile/builds/5fe60195-a45c-4873-8376-edab5356c284). Android pedirá permitir la instalación desde el navegador: es
 normal, porque la app no viene de Google Play.
 
 El APK usa la API de **producción** (`https://gymbros.apolobyte.online/api/v1`),
