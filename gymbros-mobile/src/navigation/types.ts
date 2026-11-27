@@ -1,6 +1,5 @@
-// Parámetros que recibe cada ruta de la app. `undefined` significa que la ruta
-// no recibe nada; un `?` significa que el parámetro es opcional.
 import { NavigatorScreenParams } from '@react-navigation/native';
+import { Ejercicio } from '../types/ejercicio';
 
 // Pantallas sin sesión iniciada.
 export type AuthStackParamList = {
@@ -20,6 +19,8 @@ export type TabsParamList = {
 // Stack principal: contiene las pestañas y las pantallas que se abren encima.
 export type MainStackParamList = {
     Tabs: NavigatorScreenParams<TabsParamList> | undefined;
+    CatalogoEjercicios: undefined;
+    DetalleEjercicio: { ejercicio: Ejercicio };
     DetalleRutina: { rutinaId: string };
     // Sin rutinaId crea una rutina nueva; con rutinaId la edita.
     CrearRutina: { rutinaId?: string } | undefined;
@@ -37,11 +38,3 @@ declare global {
         interface RootParamList extends MainStackParamList, AuthStackParamList { }
     }
 }
-
-export type MainStackParamList = {
-    Tabs: NavigatorScreenParams<TabsParamList> | undefined;
-    CatalogoEjercicios: undefined;
-    DetalleRutina: { rutinaId: string };
-    DetalleEjercicio: { ejercicio: Ejercicio };
-    // ... el resto de rutas que ya existen
-};
