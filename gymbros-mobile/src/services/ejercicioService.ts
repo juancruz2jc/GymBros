@@ -1,4 +1,5 @@
 import { Ejercicio, FiltrosEjercicio } from '../types/ejercicio';
+import { UltimoRegistro } from '../types/serie';
 import { api } from './api';
 
 export const listarEjercicios = async (filtros: FiltrosEjercicio = {}): Promise<Ejercicio[]> => {
@@ -16,4 +17,11 @@ export const listarEjercicios = async (filtros: FiltrosEjercicio = {}): Promise<
 
     const { data } = await api.get<Ejercicio[]>('/ejercicios', { params });
     return data;
+};
+
+// Última serie de la persona en este ejercicio ("la vez pasada"), o null si
+// nunca lo ha hecho.
+export const obtenerUltimoRegistro = async (ejercicioId: string): Promise<UltimoRegistro | null> => {
+    const { data } = await api.get<UltimoRegistro | null>(`/ejercicios/${ejercicioId}/ultimo-registro`);
+    return data ?? null;
 };
