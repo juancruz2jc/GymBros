@@ -55,18 +55,21 @@ const EstadoActual = ({ medicion }: EstadoActualProps) => {
     );
 };
 
-// FilaMedicion: una medición del historial. Mantener presionado la elimina.
+// FilaMedicion: una medición del historial. Tocarla la edita y mantenerla
+// presionada la elimina.
 interface FilaProps {
     medicion: Medicion;
+    onPress?: () => void;
     onLongPress?: () => void;
 }
 
-const FilaMedicion = ({ medicion, onLongPress }: FilaProps) => {
+const FilaMedicion = ({ medicion, onPress, onLongPress }: FilaProps) => {
     const categoria = obtenerCategoria(medicion.categoria_imc);
 
     return (
         <Pressable
             style={({ pressed }) => [styles.fila, pressed && styles.presionada]}
+            onPress={onPress}
             onLongPress={onLongPress}
         >
             <View>
@@ -155,13 +158,19 @@ export const Progreso = () => {
             {error !== '' && <Text style={styles.error}>{error}</Text>}
 
             <Text style={styles.subtitulo}>Historial</Text>
-            <Text style={styles.textoSuave}>Mantén presionada una medición para eliminarla.</Text>
+            <Text style={styles.textoSuave}>Toca una medición para editarla o mantenla presionada para eliminarla.</Text>
 
             <FlatList
                 data={mediciones}
                 keyExtractor={(medicion) => medicion.id}
                 renderItem={({ item }) => (
-                    <FilaMedicion medicion={item} onLongPress={() => confirmarEliminar(item)} />
+                    <FilaMedicion
+                        medicion={item}
+                        onPress={() =>
+                            navigation.navigate('RegistrarMedicion', { medicionId: item.id })
+                        }
+                        onLongPress={() => confirmarEliminar(item)}
+                    />
                 )}
                 contentContainerStyle={styles.lista}
                 refreshControl={<RefreshControl refreshing={refrescando} onRefresh={refrescar} />}
