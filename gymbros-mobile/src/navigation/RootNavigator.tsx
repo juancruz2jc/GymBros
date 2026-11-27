@@ -25,7 +25,7 @@ const MainStack = () => {
             <Stack.Screen
                 name="DetalleRutina"
                 component={DetalleRutina}
-                options={{ title: 'Detalle de rutina' }}
+                options={{ headerShown: false }}
             />
             <Stack.Screen
                 name="CrearRutina"
