@@ -34,6 +34,14 @@ export type MainStackParamList = {
 // Hace que useNavigation() conozca los nombres y parámetros de las rutas.
 declare global {
     namespace ReactNavigation {
-        interface RootParamList extends MainStackParamList, AuthStackParamList {}
+        interface RootParamList extends MainStackParamList, AuthStackParamList { }
     }
 }
+
+export type MainStackParamList = {
+    Tabs: NavigatorScreenParams<TabsParamList> | undefined;
+    CatalogoEjercicios: undefined;
+    DetalleRutina: { rutinaId: string };
+    DetalleEjercicio: { ejercicio: Ejercicio };
+    // ... el resto de rutas que ya existen
+};

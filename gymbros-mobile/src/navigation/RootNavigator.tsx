@@ -11,6 +11,8 @@ import { DetalleRutina } from '../screens/rutinas/DetalleRutina';
 import { AuthStack } from './AuthStack';
 import { Tabs } from './Tabs';
 import { MainStackParamList } from './types';
+import { CatalogoEjercicios } from '../screens/rutinas/CatalogoEjercicios';
+import { DetalleEjercicio } from '../screens/rutinas/DetalleEjercicio';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -50,6 +52,16 @@ const MainStack = () => {
                 name="CompararMediciones"
                 component={CompararMediciones}
                 options={{ title: 'Comparar mediciones' }}
+            />
+            <Stack.Screen
+                name="CatalogoEjercicios"
+                component={CatalogoEjercicios}
+                options={{ title: 'Catálogo de ejercicios' }}
+            />
+            <Stack.Screen
+                name="DetalleEjercicio"
+                component={DetalleEjercicio}
+                options={{ headerShown: false }}
             />
         </Stack.Navigator>
     );
