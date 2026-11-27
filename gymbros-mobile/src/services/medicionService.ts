@@ -1,12 +1,11 @@
 import { Medicion } from '../types/medicion';
 import { api } from './api';
 
-// Llamadas de mediciones a la API.
+// Llamadas de mediciones corporales.
 
-// Historial del usuario del token. La API lo devuelve de la más antigua a la
-// más reciente (por `fecha`). `desde` y `hasta` son opcionales ("YYYY-MM-DD").
-export const listarMediciones = async (desde?: string, hasta?: string) => {
-    const { data } = await api.get<Medicion[]>('/mediciones', { params: { desde, hasta } });
+// La API las entrega de la más antigua a la más reciente.
+export const obtenerMediciones = async () => {
+    const { data } = await api.get<Medicion[]>('/mediciones');
     return data;
 };
 

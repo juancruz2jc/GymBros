@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getErrorMessage } from '../services/api';
-import { eliminarMedicion, listarMediciones } from '../services/medicionService';
+import { eliminarMedicion, obtenerMediciones } from '../services/medicionService';
 import { Medicion } from '../types/medicion';
 
 // useMediciones: historial de mediciones del usuario con sus acciones.
@@ -16,7 +16,7 @@ export const useMediciones = () => {
     const recargar = useCallback(async () => {
         setError('');
         try {
-            const datos = await listarMediciones();
+            const datos = await obtenerMediciones();
             setMediciones([...datos].reverse()); // la API la manda ascendente
         } catch (e) {
             setError(getErrorMessage(e));

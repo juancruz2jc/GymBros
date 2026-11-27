@@ -9,6 +9,7 @@ import { useMediciones } from '../../hooks/useMediciones';
 import { getErrorMessage } from '../../services/api';
 import { theme } from '../../theme/theme';
 import { CategoriaImc, Medicion } from '../../types/medicion';
+import { formatearFecha } from '../../utils/formato';
 
 // Texto y color de cada categoría de IMC.
 const CATEGORIAS: Record<CategoriaImc, { texto: string; color: string }> = {
@@ -18,14 +19,9 @@ const CATEGORIAS: Record<CategoriaImc, { texto: string; color: string }> = {
     obesidad: { texto: 'Obesidad', color: theme.colors.error },
 };
 
-const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-
-// "2025-01-10" -> "10 ene 2025". Se separa el texto a mano: con new Date() la
-// fecha se lee en UTC y en Colombia podría mostrarse el día anterior.
-const formatearFecha = (fecha: string) => {
-    const [anio, mes, dia] = fecha.split('-');
-    return `${Number(dia)} ${MESES[Number(mes) - 1]} ${anio}`;
-};
+// Texto y color de la categoría que manda la API, o null si no hay IMC.
+const obtenerCategoria = (categoria: string | null) =>
+    categoria !== null && categoria in CATEGORIAS ? CATEGORIAS[categoria as CategoriaImc] : null;
 
 // EstadoActual: tarjeta "Tu estado actual" con la última medición.
 interface EstadoActualProps {
@@ -33,7 +29,7 @@ interface EstadoActualProps {
 }
 
 const EstadoActual = ({ medicion }: EstadoActualProps) => {
-    const categoria = medicion.categoria_imc ? CATEGORIAS[medicion.categoria_imc] : null;
+    const categoria = obtenerCategoria(medicion.categoria_imc);
 
     return (
         <View style={styles.tarjeta}>
@@ -66,7 +62,7 @@ interface FilaProps {
 }
 
 const FilaMedicion = ({ medicion, onLongPress }: FilaProps) => {
-    const categoria = medicion.categoria_imc ? CATEGORIAS[medicion.categoria_imc] : null;
+    const categoria = obtenerCategoria(medicion.categoria_imc);
 
     return (
         <Pressable

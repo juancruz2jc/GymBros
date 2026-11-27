@@ -1,14 +1,9 @@
-// Categoría OMS del IMC que calcula la API (RN-13).
-export type CategoriaImc = 'bajo_peso' | 'normal' | 'sobrepeso' | 'obesidad';
-
-// Una medición como la devuelve GET /mediciones. `null` = no se registró.
-// `imc` y `categoria_imc` son `null` si el usuario no tiene altura en su perfil.
+// Medición corporal: respuesta de /mediciones.
 export interface Medicion {
     id: string;
-    fecha: string; // "YYYY-MM-DD"
+    usuario_id: string | null;
+    fecha: string; // "AAAA-MM-DD"
     peso_kg: number;
-    imc: number | null;
-    categoria_imc: CategoriaImc | null;
     porcentaje_grasa: number | null;
     masa_muscular_kg: number | null;
     circunf_cintura_cm: number | null;
@@ -16,5 +11,10 @@ export interface Medicion {
     circunf_brazo_cm: number | null;
     circunf_pierna_cm: number | null;
     circunf_pecho_cm: number | null;
+    imc: number | null; // null si el perfil no tiene altura
+    categoria_imc: string | null;
     creado_en: string;
 }
+
+// Valores posibles de `categoria_imc` (clasificación OMS, RN-13).
+export type CategoriaImc = 'bajo_peso' | 'normal' | 'sobrepeso' | 'obesidad';
