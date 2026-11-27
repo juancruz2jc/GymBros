@@ -18,3 +18,20 @@ export interface Medicion {
 
 // Valores posibles de `categoria_imc` (clasificación OMS, RN-13).
 export type CategoriaImc = 'bajo_peso' | 'normal' | 'sobrepeso' | 'obesidad';
+
+// Campos opcionales que el usuario puede registrar en una medición.
+export type CampoOpcional =
+    | 'porcentaje_grasa'
+    | 'masa_muscular_kg'
+    | 'circunf_cintura_cm'
+    | 'circunf_cadera_cm'
+    | 'circunf_brazo_cm'
+    | 'circunf_pierna_cm'
+    | 'circunf_pecho_cm';
+
+// Cuerpo de POST /mediciones y PUT /mediciones/{id}. Los opcionales que no se
+// envían quedan vacíos (o sin cambios, en el PUT).
+export type MedicionDatos = {
+    fecha: string; // "AAAA-MM-DD"
+    peso_kg: number;
+} & Partial<Record<CampoOpcional, number>>;
