@@ -1,0 +1,15 @@
+# Cobertura de pruebas (pytest-cov). Se activa con --cov=app (el CI lo hace).
+[run]
+source = app
+branch = True
+
+[report]
+# Umbral mínimo acordado. Si la cobertura baja de aquí, el CI falla y no se
+# despliega. Se puede subir con el tiempo; bajarlo debe discutirse en el PR.
+fail_under = 80
+show_missing = True
+skip_covered = False
+precision = 1
+exclude_also =
+    if __name__ == .__main__.:
+    raise NotImplementedError

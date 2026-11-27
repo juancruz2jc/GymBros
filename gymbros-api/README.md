@@ -210,7 +210,12 @@ gymbros-api/
 │   └── versions/          una migración por cambio, en orden
 │
 ├── scripts/               tareas de una sola vez (seeds), se corren a mano
-├── tests/                 pruebas (vacía: pytest no se ha visto en el curso)
+├── pytest.ini             configuración de pytest
+├── .coveragerc            cobertura mínima exigida (80 %)
+├── tests/                 pruebas automatizadas (ver "Pruebas automatizadas")
+│   ├── conftest.py        base de datos de pruebas, cliente HTTP y fábricas
+│   ├── unit/              lógica pura: seguridad, esquemas, cálculos
+│   └── api/               un archivo por router: test_<modulo>.py
 │
 └── app/                   el paquete Python de la aplicación
     ├── main.py            crea la app y monta los routers
@@ -240,6 +245,82 @@ negocio, va en `services/`.
 
 Por qué existe esa separación y cómo trabajar dentro de ella está en la
 guía del equipo.
+
+---
+
+## Pruebas automatizadas
+
+Las pruebas corren **solas en GitHub Actions** (workflow `ci-cd`) en cada PR
+hacia `dev` o `main` y en cada merge. **Si fallan, no se despliega.** El job
+`pruebas` se cae si:
+
+- alguna prueba falla;
+- la cobertura baja del **80 %** (`.coveragerc`);
+- algún endpoint de la app **no tiene ninguna prueba** que lo llame
+  (`--verificar-rutas`). Un router nuevo sin pruebas no llega a `dev`;
+- un modelo cambió y **falta la migración** (`tests/api/test_migraciones.py`).
+
+### Correrlas en tu máquina
+
+Necesitas Docker para la base de pruebas. **Nunca** se usa Supabase: el
+`conftest.py` se niega a correr si la URL no es de una base con "test" en el
+nombre, porque borra y recrea su esquema.
+
+```powershell
+# 1. Base de pruebas desechable (una vez; luego `docker start gymbros-test-db`)
+docker run -d --name gymbros-test-db -e POSTGRES_USER=gymbros -e POSTGRES_PASSWORD=gymbros -e POSTGRES_DB=gymbros_test -p 55432:5432 postgres:16-alpine
+
+# 2. Desde gymbros-api/, con el venv activado
+pytest                                   # toda la suite
+pytest tests/api/test_rutinas.py         # un módulo
+pytest -m unit                           # solo unitarias (no necesitan Docker)
+pytest -k favorita                       # por nombre
+pytest --cov=app --verificar-rutas       # exactamente lo que corre el CI
+```
+
+El puerto `55432` evita chocar con un PostgreSQL instalado en Windows. Para
+usar otra base: variable `TEST_DATABASE_URL`.
+
+### Cómo funciona
+
+- Al arrancar, el esquema de la base de pruebas se construye con
+  `alembic upgrade head`: las migraciones se prueban en cada ejecución.
+- Cada prueba corre en una transacción que se **revierte al final**. Los
+  `commit()` de los servicios no persisten: las pruebas no se ensucian entre sí
+  y el orden no importa.
+- Los usuarios se crean por la API real (registro + login), así que cada
+  prueba de endpoint pasa también por la autenticación.
+
+### Fixtures disponibles (`tests/conftest.py`)
+
+| Fixture | Qué da |
+|---|---|
+| `client` | Cliente HTTP de la API (`client.get(...)`, `client.post(...)`) |
+| `db` | Sesión de SQLAlchemy de la prueba (para preparar o verificar datos) |
+| `usuario`, `otro_usuario` | Usuarios registrados; `usuario.headers` trae el `Bearer` |
+| `crear_usuario(...)` | Fábrica de usuarios con correo/nombre propios |
+| `ejercicio`, `crear_ejercicio(**campos)` | Ejercicios del catálogo (se insertan directo: no hay API de alta) |
+| `crear_rutina(usuario, [ejercicios])` | Rutina creada por la API |
+| `iniciar_sesion(usuario, **campos)` | Sesión activa |
+| `registrar_series(usuario, sesion_id, [series])` | Series en una sesión activa |
+| `sesion_finalizada(usuario, [(ejercicio, n, reps, peso)])` | Sesión completa ya finalizada |
+| `crear_medicion(usuario, fecha=None, **campos)` | Medición registrada por la API |
+
+### Al crear un módulo nuevo
+
+1. Crea `tests/api/test_<modulo>.py`. Usa como plantilla uno existente
+   (`test_rutinas.py` es corto y completo).
+2. Por cada endpoint, como mínimo:
+   - el camino feliz (código y cuerpo de la respuesta);
+   - **401** sin token (si es privado);
+   - **404** con un id inexistente **y con un recurso de `otro_usuario`**
+     (RN-60: ajeno = inexistente);
+   - **422** con datos inválidos;
+   - cada regla de negocio (`# RN-XX`) que implemente el servicio.
+3. Si el módulo necesita datos de apoyo repetidos, agrega una fábrica en
+   `conftest.py` en vez de copiarla entre archivos.
+4. Lógica pura (cálculos, validadores) → `tests/unit/`.
+5. Corre `pytest --cov=app --verificar-rutas` antes de abrir el PR.
 
 ---
 
