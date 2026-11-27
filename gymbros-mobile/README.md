@@ -46,6 +46,40 @@ desarrollo (`npm install` lo instala).
 > se ven las pantallas, pero las llamadas a la API quedan bloqueadas. Para probar
 > datos reales, usa el celular.
 
+## APK para Android
+
+La app se puede instalar en Android sin tener Expo abierto en un computador.
+
+**Descargar:** [APK de GymBros](https://expo.dev/artifacts/eas/woIFjV_ijhBc-OQrPOihEkgrWNirv-434bo5xozEw5w.apk) (abre el enlace desde el celular y
+toca *Install*). Android pedirá permitir la instalación desde el navegador: es
+normal, porque la app no viene de Google Play.
+
+El APK usa la API de **producción** (`https://gymbros.apolobyte.online/api/v1`),
+no la del `.env`: la cuenta con la que se inicie sesión debe existir en
+producción.
+
+### Generar un APK nuevo
+
+Se hace con [EAS Build](https://docs.expo.dev/build/introduction/), en la nube.
+El proyecto de Expo es `@juanjosecruz/gymbros-mobile`.
+
+```powershell
+npm install -g eas-cli     # una sola vez
+eas login                  # cuenta de Expo con acceso al proyecto
+eas build --platform android --profile preview
+```
+
+Al terminar (unos 10-20 minutos), EAS muestra el enlace de descarga. Los
+perfiles están en `eas.json`:
+
+| Perfil | Genera | API |
+|---|---|---|
+| `preview` | APK instalable directamente | Producción |
+| `production` | AAB para Google Play | Producción |
+
+La URL de la API del build sale de `env` en `eas.json`; el `.env` local no se
+sube a EAS.
+
 ## Sesión
 
 Para entrar a las pestañas hay que iniciar sesión. El correo y la contraseña del

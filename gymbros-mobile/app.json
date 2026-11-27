@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "gymbros-mobile",
+    "name": "GymBros",
     "slug": "gymbros-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "online.apolobyte.gymbros",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +25,12 @@
     "plugins": [
       "expo-font",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2ec82579-f568-4ebb-918d-0f53d48671e2"
+      }
+    },
+    "owner": "juanjosecruz"
   }
 }
