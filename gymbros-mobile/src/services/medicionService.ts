@@ -1,4 +1,4 @@
-import { Medicion, MedicionDatos } from '../types/medicion';
+import { Medicion, MedicionComparativa, MedicionDatos } from '../types/medicion';
 import { api } from './api';
 
 // Llamadas de mediciones corporales.
@@ -28,6 +28,16 @@ export const crearMedicion = async (datos: MedicionDatos) => {
 // PUT: la fecha va solo como "AAAA-MM-DD". Solo cambia los campos enviados.
 export const editarMedicion = async (id: string, datos: MedicionDatos) => {
     const { data } = await api.put<Medicion>(`/mediciones/${id}`, datos);
+    return data;
+};
+
+// Compara las mediciones de dos fechas ("AAAA-MM-DD"), en cualquier orden.
+// 400 si las fechas son iguales; 404 si alguna no tiene medición (el mensaje
+// dice cuál).
+export const compararMediciones = async (fecha1: string, fecha2: string) => {
+    const { data } = await api.get<MedicionComparativa>('/mediciones/comparar', {
+        params: { fecha1, fecha2 },
+    });
     return data;
 };
 

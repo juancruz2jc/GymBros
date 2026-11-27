@@ -35,3 +35,14 @@ export type MedicionDatos = {
     fecha: string; // "AAAA-MM-DD"
     peso_kg: number;
 } & Partial<Record<CampoOpcional, number>>;
+
+// Diferencias de GET /mediciones/comparar: reciente − anterior. `null` si a
+// alguna de las dos le falta ese dato.
+export type DiferenciasMedicion = Record<CampoOpcional | 'peso_kg' | 'imc', number | null>;
+
+// Respuesta de GET /mediciones/comparar.
+export interface MedicionComparativa {
+    medicion_anterior: Medicion;
+    medicion_reciente: Medicion;
+    diferencias: DiferenciasMedicion;
+}
